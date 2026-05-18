@@ -119,6 +119,40 @@ def should_parse_python(source: str) -> bool:
     return not stripped.startswith(("%", "!", "%%"))
 
 
+def _check_exercise_solution_completeness(path: Path, cells: list) -> list[str]:
+    """Rule 5: every contiguous 'exercise' group must be followed by a 'solution' cell.
+
+    A group is a run of consecutive cells with tag 'exercise'. We look for a
+    'solution'-tagged cell either within the group or in the next 3 cells.
+    Missing solutions are reported with the group's cell range for easy triage.
+    """
+    errors: list[str] = []
+    n = len(cells)
+    i = 0
+    while i < n:
+        tags = (cells[i].get("metadata") or {}).get("tags") or []
+        if "exercise" not in tags:
+            i += 1
+            continue
+        start = i
+        while i < n and "exercise" in ((cells[i].get("metadata") or {}).get("tags") or []):
+            i += 1
+        end_exclusive = i
+        has_solution = False
+        for k in range(start, min(end_exclusive + 3, n)):
+            k_tags = (cells[k].get("metadata") or {}).get("tags") or []
+            if "solution" in k_tags:
+                has_solution = True
+                break
+        if not has_solution:
+            rng = f"{start + 1}" if end_exclusive - start == 1 else f"{start + 1}..{end_exclusive}"
+            errors.append(
+                f"{path}: exercise group at cell {rng} has no adjacent 'solution' cell "
+                f"(must appear inside the group or within 3 cells after it)"
+            )
+    return errors
+
+
 def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
     errors: list[str] = []
 
@@ -207,6 +241,9 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
                 f"{path}: cell {cell_index}: Python syntax error at line "
                 f"{exc.lineno}: {exc.msg}"
             )
+
+    # Rule 5: exercise-solution completeness.
+    errors.extend(_check_exercise_solution_completeness(path, cells))
 
     return errors
 

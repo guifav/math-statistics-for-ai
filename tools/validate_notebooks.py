@@ -227,7 +227,7 @@ def validate_repository() -> list[str]:
         errors.extend(validate_notebook(path, notebook_names))
 
     for path in sorted(ROOT.glob("*")):
-        if path.name in {"README.md", "LICENSE", "requirements.txt", ".gitignore", ".github", "tools", "notebooks", ".git"}:
+        if path.name in {"README.md", "LICENSE", "requirements.txt", "requirements-gpu.txt", ".gitignore", ".github", "tools", "notebooks", ".git"}:
             continue
         if path.is_file() and path.suffix.lower() in {".md", ".txt"}:
             errors.append(f"{path}: documentation must be consolidated into README.md")

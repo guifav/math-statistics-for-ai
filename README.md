@@ -37,7 +37,7 @@ Curriculo educacional em portugues para estudar matematica, estatistica, machine
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt (para CPU) ou requirements-gpu.txt (para GPU CUDA 12.1)
 jupyter lab notebooks
 ```
 
@@ -91,7 +91,7 @@ python3 tools/validate_notebooks.py
 | [`3_4_svm_kernel.ipynb`](notebooks/03-machine-learning/3_4_svm_kernel.ipynb) | 40 | Margens, vetores de suporte, kernels, gamma, C e classificacao nao-linear. |
 | [`3_5_clustering.ipynb`](notebooks/03-machine-learning/3_5_clustering.ipynb) | 38 | K-Means, DBSCAN, clustering hierarquico, GMM e avaliacao de clusters. |
 | [`3_6_reducao_dimensionalidade.ipynb`](notebooks/03-machine-learning/3_6_reducao_dimensionalidade.ipynb) | 38 | Maldicao da dimensionalidade, PCA, t-SNE, UMAP, interpretacao e visualizacao. |
-| [`tutorial_completo_classificacao_ml.ipynb`](notebooks/03-machine-learning/tutorial_completo_classificacao_ml.ipynb) | 53 | Fluxo completo de classificacao, da preparacao dos dados a avaliacao de modelos. |
+| [`3_0_tutorial_from_scratch.ipynb`](notebooks/03-machine-learning/3_0_tutorial_from_scratch.ipynb) | 53 | Fluxo completo de classificacao, da preparacao dos dados a avaliacao de modelos. |
 
 ### 04 - Deep Learning
 
@@ -166,7 +166,7 @@ Os notebooks combinam aula, pratica guiada e solucoes executaveis. Para evitar c
 
 ## Desenvolvimento e Qualidade
 
-- `requirements.txt` contem as bibliotecas usadas nos notebooks e inclui Jupyter.
+- `requirements.txt (para CPU) ou requirements-gpu.txt (para GPU CUDA 12.1)` contem as bibliotecas usadas nos notebooks e inclui Jupyter.
 - `.github/workflows/validate.yml` executa a validacao leve em push e pull request.
 - `.gitignore` exclui caches, ambientes virtuais e checkpoints de notebooks.
 - `LICENSE` define a licenca MIT para o material deste repositorio.

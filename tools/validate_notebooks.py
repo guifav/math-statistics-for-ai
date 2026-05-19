@@ -37,6 +37,22 @@ CODE_KEYWORDS_IN_COMMENT_RE = re.compile(
     r"\b(def|import|from|return|class|for|while|if|elif|else|print|lambda|with|try|except)\b\s*[\(:]?"
 )
 
+# nbformat 4.5+ requires every cell to carry an id matching ^[a-zA-Z0-9_-]+$.
+CELL_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+# Markdown cells whose source looks like Python code (multiple top-level
+# Python statements + a print/import) usually indicate a cell that was meant
+# to be a code cell. They escape the existing code-only-comment heuristic
+# because that heuristic only runs on code cells.
+MD_CODE_KEYWORDS = re.compile(
+    r"^\s*(print\s*\(|def \w+\s*\(|class \w+\s*[\(:]|import \S+|from \S+ import)",
+    re.M,
+)
+
+# Heading marker glued to non-heading content on the same line (the
+# newline-stripping corruption fingerprint).
+COLLAPSED_HEADING_RE = re.compile(r"^#{1,6} [^\n]{6,}[a-z]{3,}[A-Z]", re.M)
+
 
 def _non_empty_lines(text: str) -> list[str]:
     return [line for line in text.splitlines() if line.strip()]
@@ -153,6 +169,20 @@ def _check_exercise_solution_completeness(path: Path, cells: list) -> list[str]:
     return errors
 
 
+def _md_looks_like_python(text: str) -> bool:
+    """Heuristic for rule 6: markdown cell containing raw Python code.
+
+    Triggers when the cell has 2+ Python-style top-level statements AND no
+    triple-backtick fence framing them. Such cells should be code cells (or
+    wrapped in a fence) — leaving them as markdown breaks rendering and hides
+    the code from execution.
+    """
+    if "```" in text:
+        return False
+    hits = MD_CODE_KEYWORDS.findall(text)
+    return len(hits) >= 2
+
+
 def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
     errors: list[str] = []
 
@@ -178,6 +208,9 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
     if not metadata.get("course_title") or not metadata.get("course_description"):
         errors.append(f"{path}: missing course title/description metadata")
 
+    nbformat_minor = nb.get("nbformat_minor", 0)
+    requires_cell_ids = nb.get("nbformat", 4) >= 4 and nbformat_minor >= 5
+
     previous_markdown_norm: str | None = None
     for cell_index, cell in enumerate(cells, start=1):
         text = source_text(cell)
@@ -196,6 +229,15 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
                     f"{path}: cell {cell_index}: references missing notebook {notebook_name}"
                 )
 
+        # Rule 6: every cell must carry a valid id in nbformat 4.5+.
+        if requires_cell_ids:
+            cell_id = cell.get("id")
+            if cell_id is None or not cell_id or not CELL_ID_RE.match(cell_id):
+                errors.append(
+                    f"{path}: cell {cell_index}: invalid cell id {cell_id!r} "
+                    f"(must match ^[a-zA-Z0-9_-]+$)"
+                )
+
         # Rule 1: consecutive duplicate markdown cells.
         if cell_type == "markdown":
             normalized = text.strip()
@@ -204,6 +246,22 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
                     f"{path}: cell {cell_index}: consecutive duplicate markdown cell"
                 )
             previous_markdown_norm = normalized
+
+            # Rule 7: markdown cell that is actually Python code (should be a
+            # code cell, or wrapped in a triple-backtick fence).
+            if _md_looks_like_python(text):
+                errors.append(
+                    f"{path}: cell {cell_index}: markdown cell contains raw Python "
+                    f"code without a fence (should be a code cell)"
+                )
+
+            # Rule 8: heading marker glued to non-heading content on the
+            # same line — fingerprint of the newline-stripping corruption.
+            if COLLAPSED_HEADING_RE.search(text):
+                errors.append(
+                    f"{path}: cell {cell_index}: heading is glued to content on "
+                    f"the same line (markdown line breaks were stripped)"
+                )
         else:
             previous_markdown_norm = None
 

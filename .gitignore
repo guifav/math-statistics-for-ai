@@ -13,3 +13,8 @@ dist/
 build/
 *.egg-info/
 .coverage
+
+# notebook runner artefatos
+.nb_run_report.jsonl
+notebooks/**/gan_training_progress.png
+notebooks/**/mode_collapse_demo.png

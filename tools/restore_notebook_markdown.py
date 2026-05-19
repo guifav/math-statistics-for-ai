@@ -31,10 +31,13 @@ LOWER_UPPER_RE = re.compile(r"([a-z]{3,})([A-Z])")
 # (`)8. Item`), but never inside dimensions (`7x7. Isso`), compound numbers
 # (`13. ...`), or single-letter variable names (`L2. ...`).
 NUMBERED_ITEM_INLINE_RE = re.compile(r"(?<=[^0-9][a-z\)])(?=\d{1,2}\. [A-Za-z*\-])")
-# Require a lowercase letter immediately before so we don't mistake math like
-# `F(5) - F(2)` for a bullet list. List items glued to prose always follow a
-# word ending in a lowercase letter (`grafo- **PageRank**`, `treino- Camada`).
-BULLET_ITEM_INLINE_RE = re.compile(r"(?<=[a-z])(?=- [A-Za-z*])")
+# Require a letter or sentence-ending punctuation IMMEDIATELY before the
+# bullet (no space). `BPTT)- **X**` and `dados...?- [ ] Foo` are bullets
+# glued to the prior line; `F(5) - F(2)` (with space between `)` and `-`)
+# is math and stays.
+BULLET_ITEM_INLINE_RE = re.compile(
+    r"(?<=[A-Za-z\?\.!\)])(?=- (?:\[|[A-Za-z*]))"
+)
 PUNCT_BEFORE_LIST_RE = re.compile(r"([?!:])\s*(?=\d{1,2}\. )")
 COLON_BEFORE_BULLET_RE = re.compile(r"([?!:])(?=- [A-Za-z*])")
 SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[a-z\)\]])\.(?=[A-Z][a-z])")
@@ -144,7 +147,7 @@ def split_heading_from_content(block: str) -> list[str]:
     if punct_list:
         candidates.append(punct_list.end(1))
 
-    bullet = re.search(r"([a-zA-Z])\s*(?=- [A-Za-z*])", rest)
+    bullet = re.search(r"([a-zA-Z])\s*(?=- (?:\[|[A-Za-z*]))", rest)
     if bullet and bullet.end(1) >= 4:
         candidates.append(bullet.end(1))
 
@@ -260,6 +263,31 @@ def _restore_fence_content(lang: str, content: str) -> str:
             "\n",
             content,
         )
+        # `comment_wordif `, `wordwhile `, ... — Portuguese/English comment
+        # ending glued directly to a Python keyword inside a fence (e.g.
+        # `# verificar sempreif A.shape...`).
+        content = re.sub(
+            r"([a-z]{3,})(?=(?:if|while|for|return|raise|elif|else|pass|break|continue|yield|with|try|except|finally|class|def|import|from)[ \(])",
+            r"\1\n",
+            content,
+        )
+        # `:    raise ` style — colon + 2+ spaces + statement keyword
+        # (Python collapsed multi-line). Use `[ \t]` so we don't re-fire on
+        # already-restored `:\n    raise` (the `\n` would otherwise count).
+        content = re.sub(
+            r":([ \t]{2,})(raise|return|pass|break|continue|yield|assert|print|del)\b",
+            r":\n\1\2",
+            content,
+        )
+        # Tighten up `:\n\n+    keyword` to `:\n    keyword` (a Python
+        # if/for/while body should sit directly under the colon, not after
+        # a blank line). Also collapse stacks of blank lines.
+        content = re.sub(
+            r":\n{2,}([ \t]+)(raise|return|pass|break|continue|yield|assert|print|del)\b",
+            r":\n\1\2",
+            content,
+        )
+        content = re.sub(r"\n{3,}", "\n\n", content)
         # Close paren/bracket followed by capital-prefixed identifier
         # (e.g. `y.std()X_train`, `data[0]Y_test`).
         content = re.sub(

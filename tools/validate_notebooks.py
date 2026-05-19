@@ -100,6 +100,22 @@ LOWER_UPPER_OPERATOR_RE = re.compile(
     r"(?<![A-Z])[a-z]{4,}[A-Z](?:\s*[\*+\-/=<>%&|@,])"
 )
 
+# Comment word glued directly to a Python keyword (`sempreif `, `endwhile `).
+# Restricted to a known keyword followed by an opening paren/space to avoid
+# matching arbitrary identifiers.
+WORD_GLUED_KEYWORD_RE = re.compile(
+    r"(?<![A-Za-z0-9_])[a-z]{3,}"
+    r"(?:if|while|for|return|raise|elif|else|pass|break|continue|yield|with|try|except|finally|class|def|import|from)"
+    r"[ \(]"
+)
+
+# Bullet item glued to the previous line OUTSIDE a fence (e.g.
+# `BPTT)- **5A_1**` or `dados?- [ ] checkbox`). The `(?<![\s])` keeps math
+# `F(5) - F(2)` safe.
+BULLET_GLUED_RE = re.compile(
+    r"(?<![\s\-])(?<=[A-Za-z\?\.!\)])- (?:\[|[A-Za-z*])"
+)
+
 
 def _first_line_has_glued_lang(first_line: str) -> bool:
     """Detect `lang` glued to identifier on a fence opener.
@@ -399,9 +415,29 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
                             f"(`{body_line[:60]}`)"
                         )
                         break
+                    if WORD_GLUED_KEYWORD_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has word glued to Python keyword "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
                 else:
                     continue
                 break
+
+            # Rule 11: bullet item glued to prior content OUTSIDE a fence
+            # (`BPTT)- **5A_1**`, `dados?- [ ] checkbox`). Math like
+            # `F(5) - F(2)` (with whitespace around the dash) is not flagged.
+            text_no_fences = FENCE_BLOCK_RE.sub("", text)
+            if BULLET_GLUED_RE.search(text_no_fences):
+                match = BULLET_GLUED_RE.search(text_no_fences)
+                start = max(0, match.start() - 30)
+                end = min(len(text_no_fences), match.end() + 30)
+                errors.append(
+                    f"{path}: cell {cell_index}: bullet item glued to prior "
+                    f"content (`{text_no_fences[start:end]!r}`)"
+                )
         else:
             previous_markdown_norm = None
 

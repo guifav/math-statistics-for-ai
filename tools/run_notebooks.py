@@ -102,8 +102,8 @@ def execute_one(path: Path, timeout: int, allow_errors: bool) -> dict:
             resources={"metadata": {"path": str(path.parent)}},
         )
         client.execute()
-        nbformat.write(nb, path)
 
+        # Count errors first (before we clear scaffold outputs below).
         n_cells = sum(1 for c in nb.cells if c.cell_type == "code")
         n_errors = 0
         scaffold_errors = 0
@@ -119,6 +119,17 @@ def execute_one(path: Path, timeout: int, allow_errors: bool) -> dict:
                         n_errors += 1
                         if first_error is None:
                             first_error = f"{o.get('ename')}: {(o.get('evalue') or '')[:200]}"
+
+        # Scaffold cells must render clean on GitHub: erase any outputs and
+        # execution_count we picked up during the run. We still ran them so
+        # downstream solution cells could see whatever variables the scaffold
+        # legitimately defines (e.g. `fractions = [...]`).
+        for cell in nb.cells:
+            if cell.cell_type == "code" and _is_exercise_only(cell):
+                cell.outputs = []
+                cell.execution_count = None
+
+        nbformat.write(nb, path)
         rec.update(
             status="ok",
             n_cells=n_cells,

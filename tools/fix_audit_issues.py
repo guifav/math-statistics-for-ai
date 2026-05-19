@@ -2,25 +2,8 @@
 """Aplica os fixes da auditoria das issues #9 e #10.
 
 Idempotente: roda quantas vezes precisar; cada fix verifica antes de
-mexer.
-
-Pipeline (ordem importa em alguns casos):
-  1. cells_md_dups          - remove cells de markdown literalmente repetidas
-  2. cells_code_dups        - remove cells de código literalmente repetidas
-  3. broken_refs            - mapeia IDs antigos para IDs reais nos textos
-  4. wrong_topic_refs       - corrige descrições erradas de notebooks destino
-  5. obsolete_refs          - remove refs a notebooks que nunca existiram
-  6. truncated_headers      - apaga cabeçalhos sem complemento (###  conexao com)
-  7. glued_headers          - separa "## TituloTexto" inserindo \n
-  8. cut_words              - completa palavras cortadas em headers
-  9. dup_imports            - remove imports identicos repetidos em ≥2 cells code
- 10. patho_repetition       - colapsa runs de cabeçalhos repetidos sem conteúdo
- 11. leaked_metadata        - remove linhas claramente metadata
- 12. exercise_bug_5D_3      - conserta exercicio Walk-Forward usando r2_wf_dt
- 13. fix_missing_sections   - 0_1 falta ##9, 5A_4 falta ##6
- 14. drop_local_paths       - tira /var/folders/... de outputs salvos
- 15. normalize_py_version   - apaga metadata.language_info.version inconsistente
- 16. update_readme_counts   - atualiza README com contagens reais
+mexer. A ordem do PIPELINE (no final do arquivo) e a fonte de verdade
+da sequencia executada e do que cada passo faz.
 
 Cada função retorna o numero de mudanças aplicadas (para log).
 """
@@ -158,32 +141,64 @@ OBSOLETE_NB_NAMES = {
 }
 
 
+def _apply_legacy_map(text: str) -> str:
+    """Aplica LEGACY_ID_MAP a um trecho de texto (markdown, codigo ou output)."""
+    new = text
+    for old, target in LEGACY_ID_MAP.items():
+        pat = re.compile(r"(?<![A-Za-z0-9])" + re.escape(old) + r"(?![A-Za-z0-9])")
+        if not pat.search(new):
+            continue
+        if target is None:
+            paren_pat = re.compile(r"\([^()]*?" + re.escape(old) + r"[^()]*?\)")
+            tmp = paren_pat.sub("", new)
+            if tmp == new:
+                tmp = pat.sub("", new)
+            new = tmp
+        else:
+            new = pat.sub(target, new)
+    return new
+
+
 def broken_refs(nb: dict, _p: Path) -> int:
     changes = 0
     for cell in nb.get("cells", []):
-        if cell.get("cell_type") != "markdown":
+        ctype = cell.get("cell_type")
+        if ctype not in ("markdown", "code"):
             continue
         src = get_src(cell)
-        new_src = src
-        for old, new in LEGACY_ID_MAP.items():
-            # padrao: ID isolado por nao-word boundary
-            pat = re.compile(r"(?<![A-Za-z0-9])" + re.escape(old) + r"(?![A-Za-z0-9])")
-            if not pat.search(new_src):
-                continue
-            if new is None:
-                # remove ID (substitui por placeholder textual quando aparece em par. fechado)
-                # remove "(5C.6)" ou similar
-                paren_pat = re.compile(r"\([^()]*?" + re.escape(old) + r"[^()]*?\)")
-                new_src2 = paren_pat.sub("", new_src)
-                if new_src2 == new_src:
-                    # se nao estava em parens, troca por texto vazio
-                    new_src2 = pat.sub("", new_src)
-                new_src = new_src2
-            else:
-                new_src = pat.sub(new, new_src)
+        new_src = _apply_legacy_map(src)
         if new_src != src:
             set_src(cell, new_src)
             changes += 1
+        # outputs (code only): refs ja renderizadas em prints/HTML salvos
+        if ctype == "code":
+            for out in cell.get("outputs", []):
+                text = out.get("text")
+                if isinstance(text, list):
+                    joined = "".join(text)
+                    replaced = _apply_legacy_map(joined)
+                    if replaced != joined:
+                        out["text"] = replaced.splitlines(keepends=True)
+                        changes += 1
+                elif isinstance(text, str):
+                    replaced = _apply_legacy_map(text)
+                    if replaced != text:
+                        out["text"] = replaced
+                        changes += 1
+                data = out.get("data", {})
+                if isinstance(data, dict):
+                    for k, v in list(data.items()):
+                        if not k.startswith("text") or not isinstance(v, (str, list)):
+                            continue
+                        joined = "".join(v) if isinstance(v, list) else v
+                        replaced = _apply_legacy_map(joined)
+                        if replaced != joined:
+                            data[k] = (
+                                replaced.splitlines(keepends=True)
+                                if isinstance(v, list)
+                                else replaced
+                            )
+                            changes += 1
     return changes
 
 
@@ -246,11 +261,18 @@ def wrong_topic_refs(nb: dict, _p: Path) -> int:
 # ---------- 5: refs textuais obsoletas (issue #10 sec 2) ----------
 
 OBSOLETE_REF_REPLACEMENTS = {
-    "4_1_pipeline_ml.ipynb": "4_1_fundamentos_redes_neurais.ipynb",
+    # 4_1_pipeline_ml e o pipeline ML end-to-end, que de fato e 3_0_tutorial_from_scratch
+    # (e nao redes neurais). Versoes anteriores apontavam para 4_1_fundamentos_redes_neurais
+    # e estavam semanticamente erradas — fix_wrong_semantic_refs limpa o legado.
+    "4_1_pipeline_ml.ipynb": "3_0_tutorial_from_scratch.ipynb",
+    # 3_1_feature_engineering coberto por 2_2_eda_completa, salvo dentro do proprio 2_2 (self-ref)
     "3_1_feature_engineering.ipynb": "2_2_eda_completa.ipynb",
     "4_2_otimizacao_hiperparametros.ipynb": "0_8_otimizacao_ml.ipynb",
     "4_4_monitoramento_modelos.ipynb": "6_3_monitoramento_drift.ipynb",
-    "5_3_interpretabilidade_modelos.ipynb": "3_6_reducao_dimensionalidade.ipynb",
+    # 5_3_interpretabilidade_modelos nao tem destino exato no curriculo atual.
+    # Mapeavamos para 3_6_reducao_dimensionalidade (errado: dim reduction != interpretabilidade).
+    # fix_wrong_semantic_refs remove o legado dessa substituicao.
+    "5_3_interpretabilidade_modelos.ipynb": "1_4_regressao_estatistica.ipynb",
     "6_1_comunicacao_resultados.ipynb": "6_1_deploy_modelos.ipynb",
     "2_1_algebra_linear_fundamentos.ipynb": "0_2_algebra_linear_vetores.ipynb",
     "3_2_algebra_linear.ipynb": "0_3_algebra_linear_matrizes.ipynb",
@@ -258,22 +280,133 @@ OBSOLETE_REF_REPLACEMENTS = {
 }
 
 
-def obsolete_refs(nb: dict, _p: Path) -> int:
+def obsolete_refs(nb: dict, p: Path) -> int:
     changes = 0
+    own_slug = p.name.removesuffix(".ipynb")
     for cell in nb.get("cells", []):
         if cell.get("cell_type") != "markdown":
             continue
         src = get_src(cell)
         new_src = src
         for old, new in OBSOLETE_REF_REPLACEMENTS.items():
-            # versão com .ipynb
+            slug_new = new.removesuffix(".ipynb")
+            # nao cria self-ref (ex: dentro de 2_2_eda_completa, nao trocar 3_1_feature_engineering -> 2_2)
+            if slug_new == own_slug:
+                continue
             if old in new_src:
                 new_src = new_src.replace(old, new)
-            # versão sem .ipynb (slug do notebook)
             slug_old = old.removesuffix(".ipynb")
-            slug_new = new.removesuffix(".ipynb")
             if slug_old in new_src:
                 new_src = new_src.replace(slug_old, slug_new)
+        if new_src != src:
+            set_src(cell, new_src)
+            changes += 1
+    return changes
+
+
+# ---------- 5b: refs semanticamente erradas legadas de OBSOLETE_REF_REPLACEMENTS antigo ----------
+
+# Versoes anteriores do OBSOLETE_REF_REPLACEMENTS apontavam refs a `4_1_pipeline_ml`
+# para `4_1_fundamentos_redes_neurais` (errado: redes neurais != pipeline ML).
+# Da mesma forma, `5_3_interpretabilidade_modelos` apontava para `3_6_reducao_dimensionalidade`
+# (errado: reducao de dim != interpretabilidade). Como os notebooks ja foram modificados
+# com esses destinos errados, precisamos de uma passada corretiva direcionada.
+
+# Cada item: (regex contextual, replacement). Aplicado so quando o contexto bate.
+SEMANTIC_REF_FIXES = [
+    # "pipeline completo de 4_1_fundamentos_redes_neurais" e variantes → 3_0_tutorial_from_scratch
+    (re.compile(r"pipeline (completo|de limpeza|de ML)( do Exercicio \d+)? (de|e formalizado em) `4_1_fundamentos_redes_neurais`"),
+     r"pipeline \1\2 \3 `3_0_tutorial_from_scratch`"),
+    (re.compile(r"pipelines? confiaveis em `4_1_fundamentos_redes_neurais`"),
+     "pipelines confiaveis em `3_0_tutorial_from_scratch`"),
+    (re.compile(r"pipeline completo de ML\.\s*\*\*`4_1_fundamentos_redes_neurais`\*\*"),
+     "pipeline completo de ML.\n3. **`3_0_tutorial_from_scratch`**"),
+    (re.compile(r"input para `4_1_fundamentos_redes_neurais`"),
+     "input para `3_0_tutorial_from_scratch`"),
+    (re.compile(r"alimentam diretamente o pipeline de `4_1_fundamentos_redes_neurais`"),
+     "alimentam diretamente o pipeline de `3_0_tutorial_from_scratch`"),
+    (re.compile(r"Data leakage na limpeza e discutido em `4_1_fundamentos_redes_neurais`"),
+     "Data leakage na limpeza e discutido em `1_5_design_experimentos`"),
+    (re.compile(r"Prevencao de leakage no pipeline e tema central de `4_1_fundamentos_redes_neurais`"),
+     "Prevencao de leakage no pipeline e tema central de `3_0_tutorial_from_scratch`"),
+    (re.compile(r"validacao de features com cross-validation aparece em `4_1_fundamentos_redes_neurais`"),
+     "validacao de features com cross-validation aparece em `3_0_tutorial_from_scratch`"),
+    (re.compile(r"validacao de features com CV aparece em `4_1_fundamentos_redes_neurais`"),
+     "validacao de features com CV aparece em `3_0_tutorial_from_scratch`"),
+    (re.compile(r"deteccao de leakage aqui previne problemas graves em `4_1_fundamentos_redes_neurais`"),
+     "deteccao de leakage aqui previne problemas graves em `3_0_tutorial_from_scratch`"),
+    (re.compile(r"recomendacao do relatorio se traduz em etapas de `4_1_fundamentos_redes_neurais`"),
+     "recomendacao do relatorio se traduz em etapas de `3_0_tutorial_from_scratch`"),
+    # Requer ausencia de "(`3_0_tutorial_from_scratch`)" depois — evita
+    # apendar repetidamente em execucoes sucessivas (idempotencia).
+    (re.compile(r"recomendacoes do relatorio EDA no pipeline(?!\s*\(`3_0_tutorial_from_scratch`\))"),
+     "recomendacoes do relatorio EDA no pipeline (`3_0_tutorial_from_scratch`)"),
+    (re.compile(r"`4_1_fundamentos_redes_neurais` \(ColumnTransformer\)"),
+     "`3_0_tutorial_from_scratch` (ColumnTransformer)"),
+    (re.compile(r"`4_1_fundamentos_redes_neurais` \(robustez\)"),
+     "`3_0_tutorial_from_scratch` (robustez)"),
+    (re.compile(r"desbalanceamento do target e tratado em `4_1_fundamentos_redes_neurais`"),
+     "desbalanceamento do target e tratado em `3_1_classificacao_completa`"),
+    (re.compile(r"desbalanceamento do target e tratado formalmente em `4_1_fundamentos_redes_neurais`"),
+     "desbalanceamento do target e tratado formalmente em `3_1_classificacao_completa`"),
+    (re.compile(r"imputacao aparecem em `2_2_eda_completa` e `4_1_fundamentos_redes_neurais`"),
+     "imputacao aparecem em `2_2_eda_completa` e `3_0_tutorial_from_scratch`"),
+    (re.compile(r"try/except com logging e usado em todo `4_1_fundamentos_redes_neurais`"),
+     "try/except com logging e usado em pipelines de producao (ver `3_0_tutorial_from_scratch`)"),
+    (re.compile(r"\| Data leakage \| `1_5_design_experimentos` \(causalidade\) \| `4_1_fundamentos_redes_neurais` \|"),
+     "| Data leakage | `1_5_design_experimentos` (causalidade) | `3_0_tutorial_from_scratch` |"),
+    # 1_4 cell 39: "interpretabilidade dos coeficientes conecta com 3_6_reducao_dimensionalidade"
+    # 3_6 e PCA/UMAP, nao interpretabilidade. Reformula sem ref errada.
+    (re.compile(r"A interpretabilidade dos coeficientes conecta com `3_6_reducao_dimensionalidade`"),
+     "A interpretabilidade dos coeficientes e abordada no proprio `1_4_regressao_estatistica` (analise de p-valores e intervalos de confianca)"),
+    # 2_2 cell 38 self-ref: "formalizado em `2_2_eda_completa`" dentro de 2_2_eda_completa
+    (re.compile(r"pipeline de feature engineering do Exercicio \d+ e formalizado em `2_2_eda_completa`"),
+     "pipeline de feature engineering do Exercicio em questao usa as tecnicas deste proprio notebook"),
+    # 2_2 cell 22: "Feature engineering completo e sistematico e o tema de `2_2_eda_completa`" (self-ref)
+    (re.compile(r"Feature engineering completo e sistematico e o tema (deste notebook|de `2_2_eda_completa`)"),
+     "Feature engineering completo e sistematico e o tema deste notebook"),
+    # 2_2 cell 10 self-ref: "deteccao de assimetria conecta com transformacoes em `2_2_eda_completa`"
+    (re.compile(r"deteccao de assimetria conecta com transformacoes em `2_2_eda_completa`"),
+     "deteccao de assimetria conecta com transformacoes apresentadas adiante neste notebook"),
+    # 2_2 cell 25 self-ref: "Train-test contamination via normalizacao e discutido em `2_2_eda_completa`"
+    (re.compile(r"Train-test contamination via normalizacao e discutido em `2_2_eda_completa`"),
+     "Train-test contamination via normalizacao e discutido em `1_5_design_experimentos`"),
+    # tabela 2_2 cell 41: "Estatisticas descritivas | 1_1 | 2_2_eda_completa" (self-ref final)
+    # tabela 2_2 cell 41: "Feature engineering | 2_1_python_data_science | 2_2_eda_completa" (self-ref)
+    # tabela 2_2 cell 41: "Outliers | 1_1 | 2_2_eda_completa" (self-ref)
+    (re.compile(r"\| Estatisticas descritivas \| `1_1_estatistica_descritiva` \| `2_2_eda_completa` \|"),
+     "| Estatisticas descritivas | `1_1_estatistica_descritiva` | EDA visual e numerica (este notebook) |"),
+    (re.compile(r"\| Feature engineering \| `2_1_python_data_science` \(Pandas\) \| `2_2_eda_completa` \|"),
+     "| Feature engineering | `2_1_python_data_science` (Pandas) | Criacao de features (este notebook) |"),
+    (re.compile(r"\| Outliers \| `1_1_estatistica_descritiva` \(IQR\) \| `2_2_eda_completa` \|"),
+     "| Outliers | `1_1_estatistica_descritiva` (IQR) | Detecao multivariada (este notebook) |"),
+    # 2_1 cell 41: tabela "Pandas DataFrame|...|2_2_eda_completa (analise exploratoria)" (ok, mantem)
+    # mas "Pandas limpeza" hoje aponta 4_1_fundamentos — corrigir
+    # ja coberto pelo regex `4_1_fundamentos_redes_neurais` (ColumnTransformer) acima
+    # listas finais "1. **2_2_eda_completa**" e "3. **2_2_eda_completa**" dentro do proprio 2_2: substitui por descricao
+    (re.compile(r"1\. \*\*`2_2_eda_completa`\*\*: Aplicar tudo em uma analise exploratoria completa"),
+     "1. Aplicar tudo em uma analise exploratoria completa (proximas secoes deste notebook)"),
+    (re.compile(r"3\. \*\*`2_2_eda_completa`\*\*: Tecnicas avancadas de criacao de features"),
+     "3. Tecnicas avancadas de criacao de features (proximas secoes deste notebook)"),
+    (re.compile(r"2\. \*\*`2_2_eda_completa`\*\*: Tecnicas avancadas de criacao de features"),
+     "2. Tecnicas avancadas de criacao de features (proximas secoes deste notebook)"),
+    (re.compile(r"2\. \*\*`2_2_eda_completa`\*\*: Usar dados coletados para criar features avancadas"),
+     "2. **`2_2_eda_completa`**: Usar dados coletados para criar features avancadas"),
+    # 2_3 cell 41: "3. **4_1_fundamentos_redes_neurais**: Integrar coleta no pipeline completo de ML"
+    (re.compile(r"3\. \*\*`4_1_fundamentos_redes_neurais`\*\*: Integrar coleta no pipeline completo de ML"),
+     "3. **`3_0_tutorial_from_scratch`**: Integrar coleta no pipeline completo de ML"),
+]
+
+
+def fix_wrong_semantic_refs(nb: dict, _p: Path) -> int:
+    changes = 0
+    for cell in nb.get("cells", []):
+        if cell.get("cell_type") != "markdown":
+            continue
+        src = get_src(cell)
+        new_src = src
+        for pat, repl in SEMANTIC_REF_FIXES:
+            new_src = pat.sub(repl, new_src)
         if new_src != src:
             set_src(cell, new_src)
             changes += 1
@@ -413,6 +546,14 @@ CUT_WORD_FIXES = [
      "### Exercício 1: Implementar Simple-RNN com predição multi-step"),
     (re.compile(r"### Exercício 1: Implementar SimpleRNN\s*\n\s*\n?\s*RNN"),
      "### Exercício 1: Implementar Simple-RNN"),
+
+    # 5D_3, 5D_4, 6_1: "### Por que em MLPalavra..." — glued_headers nao pega porque
+    # "ML" termina em uppercase (regex exige minusculas antes). Separador explicito:
+    (re.compile(r"^### Por que em ML([A-ZÀ-Ý][a-zà-ÿ])", re.MULTILINE),
+     r"### Por que em ML\n\n\1"),
+    # 5D_3 cell 22: "## 8. Comparação ML vs. ARIMATrade-offs..." — similar
+    (re.compile(r"^## 8\. Comparação ML vs\. ARIMA([A-ZÀ-Ý][a-zà-ÿ])", re.MULTILINE),
+     r"## 8. Comparação ML vs. ARIMA\n\n\1"),
 ]
 
 
@@ -478,44 +619,6 @@ REPETITIVE_HEADER_PATTERNS = [
     re.compile(r"^###\s+Conexao\s+com\s+outros\s+notebooks\s*$", re.IGNORECASE),
 ]
 
-
-def patho_repetition(nb: dict, _p: Path) -> int:
-    """Remove cells de markdown que contém APENAS um cabeçalho genérico
-    repetido. Mantém o primeiro ocorrência se a cell tiver só o header."""
-    keep = []
-    seen_only_header: set[str] = set()
-    removed = 0
-    for cell in nb.get("cells", []):
-        if cell.get("cell_type") != "markdown":
-            keep.append(cell)
-            continue
-        src = get_src(cell).strip()
-        # cell que tem só um header sem conteudo
-        if len(src.split("\n")) <= 2:
-            for pat in REPETITIVE_HEADER_PATTERNS:
-                if pat.match(src.split("\n")[0]):
-                    norm = src.split("\n")[0].strip().lower()
-                    if norm in seen_only_header:
-                        removed += 1
-                        break
-                    seen_only_header.add(norm)
-            else:
-                keep.append(cell)
-                continue
-            # entrou no break => decide
-            if norm not in seen_only_header or removed == 0:
-                keep.append(cell)
-            elif norm in seen_only_header and removed > 0:
-                pass  # skip
-        else:
-            keep.append(cell)
-    if removed:
-        # alternativa mais simples: refazer com dedup explicito
-        pass
-    return removed
-
-
-# ---------- 10 (rev): versao mais limpa ----------
 
 def patho_repetition_v2(nb: dict, _p: Path) -> int:
     keep = []
@@ -811,10 +914,36 @@ def clean_warning_outputs(nb: dict, _p: Path) -> int:
                     if not new_text:
                         changes += 1
                         continue
-                    out["text"] = new_text + "\n"
+                    if (out["text"] if isinstance(out.get("text"), str) else "".join(out.get("text", []))) != new_text + "\n":
+                        out["text"] = new_text + "\n"
+                        changes += 1
             new_outputs.append(out)
         if len(new_outputs) != len(outputs):
             cell["outputs"] = new_outputs
+    return changes
+
+
+# ---------- 14c: reduzir runtime do 4_6 (issue #10 - timeout 300s) ----------
+
+
+def reduce_4_6_runtime(nb: dict, p: Path) -> int:
+    """4_6_otimizacao_python.ipynb roda em ~291s (margem de 9s para timeout 300s).
+    Cell 11 tem dois `for i in range(n * 1000000)` que dominam o tempo.
+    Reduzimos para `n * 100000` (10x menor) — ainda demonstra a diferenca de cache.
+    """
+    if p.name != "4_6_otimizacao_python.ipynb":
+        return 0
+    changes = 0
+    for cell in nb.get("cells", []):
+        if cell.get("cell_type") != "code":
+            continue
+        src = get_src(cell)
+        if "range(n * 1000000)" not in src:
+            continue
+        new_src = src.replace("range(n * 1000000)", "range(n * 100000)")
+        if new_src != src:
+            set_src(cell, new_src)
+            changes += 1
     return changes
 
 
@@ -833,21 +962,32 @@ def normalize_py_version(nb: dict, _p: Path) -> int:
 
 # ---------- pipeline orquestrador ----------
 
+# Ordem importa:
+# - cut_words antes de glued_headers: corrige palavras quebradas em multilinha
+#   antes da heuristica de glued_headers, que so olha uma linha por vez.
+# - glued_headers ANTES de truncated_headers: quando glued separa um header
+#   colado, ele pode expor um header generico ("### O que concluir"), que
+#   precisa ser limpado em seguida. Inverter quebra idempotencia.
+# - fix_wrong_semantic_refs depois de obsolete_refs: limpa o legado de
+#   substituicoes erradas (4_1_pipeline_ml -> 4_1_fundamentos_redes_neurais)
+#   que existiam em versoes anteriores deste script.
 PIPELINE = [
     ("cells_md_dups", cells_md_dups),
     ("cells_code_dups", cells_code_dups),
     ("broken_refs", broken_refs),
     ("wrong_topic_refs", wrong_topic_refs),
     ("obsolete_refs", obsolete_refs),
-    ("truncated_headers", truncated_headers),
-    ("glued_headers", glued_headers),
+    ("fix_wrong_semantic_refs", fix_wrong_semantic_refs),
     ("cut_words", cut_words),
+    ("glued_headers", glued_headers),
+    ("truncated_headers", truncated_headers),
     ("dup_imports", dup_imports),
     ("patho_repetition", patho_repetition_v2),
     ("leaked_metadata", leaked_metadata),
     ("exercise_bug_5D_3", exercise_bug_5D_3),
     ("fix_dup_h2_0_1", fix_dup_h2_0_1),
     ("fix_missing_sections", fix_missing_sections),
+    ("reduce_4_6_runtime", reduce_4_6_runtime),
     ("drop_local_paths", drop_local_paths),
     ("clean_warning_outputs", clean_warning_outputs),
     ("normalize_py_version", normalize_py_version),

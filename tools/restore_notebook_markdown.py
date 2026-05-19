@@ -260,6 +260,24 @@ def _restore_fence_content(lang: str, content: str) -> str:
             "\n",
             content,
         )
+        # Close paren/bracket followed by capital-prefixed identifier
+        # (e.g. `y.std()X_train`, `data[0]Y_test`).
+        content = re.sub(
+            r"([\)\]])(?=[A-Z][a-zA-Z_0-9]*\s*[,=\.\(])",
+            r"\1\n",
+            content,
+        )
+        # NOTE: word glued to a single-letter+underscore identifier (e.g.
+        # `testey_normalized = ...`) used to be auto-fixed by a regex, but
+        # the same regex also fired on legit identifiers like `mean_train` at
+        # line start (greedy backtracking would pick `mea` + `n_train`). The
+        # autocorrect was removed; the validator instead reports these and
+        # they are repaired by hand.
+        # `importaresultado = ...` (lowercase comment word glued to lowercase
+        # variable assignment with no identifier-boundary character between
+        # them) is also not auto-fixed — the regex cannot pick the right
+        # split point without a dictionary. Both cases are reported by the
+        # validator's rule 10 for manual repair.
         # All-caps comment word followed by lowercase code.
         content = re.sub(r"(#[^\n]*[A-Z]{3,})(?=[a-z])", r"\1\n", content)
         # `wordA *` or `wordA = ` — statement starts with a single uppercase
@@ -270,8 +288,10 @@ def _restore_fence_content(lang: str, content: str) -> str:
             content,
         )
         # Lowercase letter followed by uppercase letter + lowercase glued
-        # (e.g. `matricialA @ B` joining a comment-end to a statement).
-        content = re.sub(r"(?<=[a-z]{3})(?=[A-Z][a-z])", "\n", content)
+        # (e.g. `matricialA @ B`). Skip when the surrounding word is a
+        # legitimate CamelCase token such as `ValueError`, `DataFrame`,
+        # `KFold` — those start with an uppercase letter.
+        content = _split_lower_upper(content)
     elif any(ch in content for ch in TREE_BRANCH_CHARS):
         # Tree diagrams: split before any branch marker.
         content = re.sub(r"(?<=.)(?=[│├└])", "\n", content)

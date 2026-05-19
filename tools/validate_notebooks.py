@@ -70,6 +70,36 @@ KNOWN_FENCE_LANGS = (
 )
 GLUED_COMMENT_RE = re.compile(r"[a-zA-Z0-9\)\]\}]#\s*[A-Za-z]")
 
+# Full-fence-body extraction used to inspect inner lines for residual
+# corruption (the opening-line check alone misses content inside the fence).
+FENCE_BODY_RE = re.compile(r"```([^\n]*)\n([\s\S]*?)```", re.MULTILINE)
+
+# Closing paren/bracket glued to an uppercase identifier (e.g. `y.std()X_train`).
+CLOSER_GLUED_UPPER_RE = re.compile(r"[\)\]][A-Z][a-zA-Z_0-9]*\s*[,=\.\(]")
+
+# Lowercase word ending glued to an underscore-style identifier whose tuple
+# eventually leads to an `=` assignment (`testey_normalized = `,
+# `barX_train, X_test = split(...)`). Restricted to `=` (not bare call) so
+# legit code embedded in comments like `# torch.manual_seed(42)` isn't
+# flagged.
+WORD_GLUED_UNDERSCORE_ID_RE = re.compile(
+    r"(?<![a-zA-Z0-9_\.])[a-z]{3,}[a-zA-Z]_[a-zA-Z]\w*(?:\s*,\s*\w+)*\s*="
+)
+
+# Lowercase word glued to lowercase identifier with assignment — ambiguous
+# boundary that the restorer cannot fix automatically. Flagged for human
+# review (e.g. `importaresultado = B @ A`, `wordvariable = ...`).
+WORD_GLUED_LOWER_ASSIGN_RE = re.compile(
+    r"(?<![a-zA-Z0-9_])[a-z]{4,}[a-z][a-z_0-9]{6,}\s*=\s*[A-Za-z\d\(\[\{]"
+)
+
+# CamelCase boundary that suggests a comment-end glued to code
+# (`matricialA @ B`, `decisaoIf ...`). We require a non-Camel context to
+# avoid flagging legitimate compound names like `KFoldClassifier`.
+LOWER_UPPER_OPERATOR_RE = re.compile(
+    r"(?<![A-Z])[a-z]{4,}[A-Z](?:\s*[\*+\-/=<>%&|@,])"
+)
+
 
 def _first_line_has_glued_lang(first_line: str) -> bool:
     """Detect `lang` glued to identifier on a fence opener.
@@ -323,6 +353,55 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
                         f"multiple `#` comments glued without newlines"
                     )
                     break
+
+            # Rule 10: fence INNER body has residual corruption fingerprints.
+            # Scans the body line by line. Inner identifiers with underscores
+            # are common in legit Python (`read_csv`, `query_vec`), so the
+            # word-glued-to-underscore-identifier check is only applied to
+            # lines that START with `#` (Python comments) — where the
+            # corruption shows up as a comment glued to a code statement.
+            for fbm in FENCE_BODY_RE.finditer(text):
+                body = fbm.group(2)
+                for body_line in body.split("\n"):
+                    if GLUED_COMMENT_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has comments glued without a newline "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
+                    if CLOSER_GLUED_UPPER_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has `)X_identifier` glued statement boundary "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
+                    is_comment_line = body_line.lstrip().startswith("#")
+                    if is_comment_line and WORD_GLUED_UNDERSCORE_ID_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has comment word glued to underscore identifier "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
+                    if is_comment_line and WORD_GLUED_LOWER_ASSIGN_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has ambiguous word-glued-to-variable boundary "
+                            f"that needs manual fix (`{body_line[:60]}`)"
+                        )
+                        break
+                    if is_comment_line and LOWER_UPPER_OPERATOR_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has lowercase-Upper boundary glued to operator "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
+                else:
+                    continue
+                break
         else:
             previous_markdown_norm = None
 

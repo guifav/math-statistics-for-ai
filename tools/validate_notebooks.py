@@ -219,13 +219,22 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
         if cell_type != "code":
             continue
 
-        if cell.get("outputs"):
+        # Rule 6: outputs are allowed (didactic render), but with two guards:
+        # (a) never commit an error output — that means a cell was committed
+        #     in a broken state;
+        # (b) never commit any output for an `exercise`-only scaffold — those
+        #     cells are stubs for the student to fill in.
+        outputs = cell.get("outputs") or []
+        for output in outputs:
+            if (output or {}).get("output_type") == "error":
+                ename = (output or {}).get("ename", "error")
+                errors.append(
+                    f"{path}: cell {cell_index}: committed output contains error ({ename})"
+                )
+                break
+        if outputs and "exercise" in cell_tags and "solution" not in cell_tags:
             errors.append(
-                f"{path}: cell {cell_index}: committed notebooks must not contain outputs"
-            )
-        if cell.get("execution_count") is not None:
-            errors.append(
-                f"{path}: cell {cell_index}: committed notebooks must not contain execution counts"
+                f"{path}: cell {cell_index}: exercise-only scaffold must not carry outputs"
             )
 
         # Rule 2: code cell that is entirely a comment block (likely broken).

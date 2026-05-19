@@ -175,7 +175,7 @@ Os notebooks combinam aula, pratica guiada e solucoes executaveis. Para evitar c
 
 Contribuicoes sao bem-vindas por pull request. Antes de contribuir, leia
 [`CONTRIBUTING.md`](CONTRIBUTING.md), rode `python3 tools/validate_notebooks.py`
-e mantenha notebooks sem outputs versionados.
+e re-execute os notebooks afetados para manter os outputs versionados consistentes.
 
 Para problemas de seguranca, consulte [`SECURITY.md`](SECURITY.md). Para regras
 de convivencia do projeto, consulte [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).

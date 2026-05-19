@@ -52,21 +52,31 @@ O validador verifica:
 - Referencias internas para notebooks existentes.
 - Tags `exercise` e `solution` consistentes.
 - Ausencia de placeholders genericos e caminhos temporarios.
-- Ausencia de outputs e `execution_count` versionados.
+- Ausencia de outputs de erro (`output_type: error`) versionados.
+- Celulas com tag `exercise` sem `solution` permanecem sem outputs.
 
 ## Politica de notebooks
 
-Mantenha os notebooks versionados sem outputs. Isso reduz diffs grandes, evita
-expor dados locais e torna a revisao mais objetiva.
+Os notebooks deste repositorio sao materiais didaticos: commitamos os outputs
+(graficos, prints, tabelas) para que o GitHub renderize os resultados sem
+precisar executar localmente. Esse e um diferencial pedagogico do projeto.
 
-Antes de commitar, limpe outputs e contadores de execucao no Jupyter ou com:
+Regras especificas:
+
+- Celulas de aula e de `solution` devem trazer os outputs gerados pela
+  execucao limpa do notebook.
+- Celulas `exercise` (scaffolds para o aluno) **nao** devem carregar outputs.
+- Nenhum output committado pode ser de erro (traceback). Re-execute ate sair
+  limpo antes de commitar.
+
+Antes de submeter mudancas, re-execute o notebook afetado de ponta a ponta
+para garantir que os outputs versionados refletem o codigo atual. Pode usar:
 
 ```bash
-jupyter nbconvert --clear-output --inplace notebooks/**/*.ipynb
+python3 tools/run_notebooks.py --single notebooks/<modulo>/<arquivo>.ipynb
 ```
 
-Se o shell nao expandir `**`, use uma ferramenta equivalente ou limpe os
-notebooks pelo Jupyter.
+ou rodar pelo Jupyter normalmente.
 
 ## Padrao de exercicios
 

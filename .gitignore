@@ -13,3 +13,11 @@ dist/
 build/
 *.egg-info/
 .coverage
+
+# Claude Code worktree metadata
+.claude/
+
+# notebook runner artefatos
+.nb_run_report.jsonl
+notebooks/**/gan_training_progress.png
+notebooks/**/mode_collapse_demo.png

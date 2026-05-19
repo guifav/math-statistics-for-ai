@@ -1,0 +1,50 @@
+name: Erro em notebook ou documentacao
+description: Reporte um erro conceitual, matematico, estatistico, de codigo ou de documentacao.
+title: "[bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar. Inclua detalhes suficientes para reproduzir e revisar o problema.
+  - type: input
+    id: location
+    attributes:
+      label: Local afetado
+      description: Informe o notebook, arquivo ou secao afetada.
+      placeholder: notebooks/00-matematica/0_1_pre_calculo_funcoes_ml.ipynb
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema observado
+      description: Descreva o erro ou comportamento inesperado.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento ou conteudo esperado
+      description: Explique o que deveria acontecer ou qual correcao parece adequada.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Como reproduzir
+      description: Liste comandos, celulas ou passos necessarios.
+      placeholder: |
+        1. Abra o notebook ...
+        2. Execute a celula ...
+        3. Observe ...
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto adicional
+      description: Versao do Python, sistema operacional, traceback ou referencias uteis.
+    validations:
+      required: false

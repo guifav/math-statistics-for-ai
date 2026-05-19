@@ -171,6 +171,15 @@ Os notebooks combinam aula, pratica guiada e solucoes executaveis. Para evitar c
 - `.gitignore` exclui caches, ambientes virtuais e checkpoints de notebooks.
 - `LICENSE` define a licenca MIT para o material deste repositorio.
 
+## Contribuicoes
+
+Contribuicoes sao bem-vindas por pull request. Antes de contribuir, leia
+[`CONTRIBUTING.md`](CONTRIBUTING.md), rode `python3 tools/validate_notebooks.py`
+e mantenha notebooks sem outputs versionados.
+
+Para problemas de seguranca, consulte [`SECURITY.md`](SECURITY.md). Para regras
+de convivencia do projeto, consulte [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+
 ## Licenca
 
 Distribuido sob a licenca MIT. Veja [`LICENSE`](LICENSE).

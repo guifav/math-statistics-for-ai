@@ -1,0 +1,42 @@
+name: Pedido de conteudo
+description: Sugira novo notebook, exercicio, exemplo ou melhoria didatica.
+title: "[conteudo]: "
+labels:
+  - enhancement
+body:
+  - type: input
+    id: module
+    attributes:
+      label: Modulo ou tema
+      description: Informe onde o conteudo se encaixa no curriculo.
+      placeholder: 01 - Estatistica / Inferencia bayesiana
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objetivo educacional
+      description: O que a pessoa estudante deve aprender ou praticar?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposta
+      description: Descreva o notebook, exercicio, exemplo ou melhoria sugerida.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Referencias
+      description: Links, livros, artigos ou materiais que ajudam a validar a proposta.
+    validations:
+      required: false
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Disponibilidade para contribuir
+      options:
+        - label: Posso abrir um pull request para implementar esta proposta.
+          required: false

@@ -5,7 +5,7 @@ Curriculo educacional em portugues para estudar matematica, estatistica, machine
 ## Estado Atual
 
 - **Notebooks:** 54
-- **Celulas:** 2718 (1784 markdown, 934 codigo)
+- **Celulas:** 2596 (1672 markdown, 924 codigo)
 - **Organizacao:** notebooks separados por modulo em `notebooks/`; o modulo 05 agrupa submodulos 05A, 05B, 05C e 05D.
 - **Validacao:** `python3 tools/validate_notebooks.py` checa JSON, cabecalho padrao, metadados, referencias internas `.ipynb`, sintaxe Python das celulas e vazamento de caminhos temporarios.
 - **Exercicios:** prompts usam `TAREFA DO ALUNO`; celulas de solucao sao marcadas com tag `solution`.
@@ -53,11 +53,11 @@ python3 tools/validate_notebooks.py
 
 | Notebook | Celulas | Descricao |
 |---|---:|---|
-| [`0_1_pre_calculo_funcoes_ml.ipynb`](notebooks/00-matematica/0_1_pre_calculo_funcoes_ml.ipynb) | 100 | Revisao de funcoes, algebra basica, exponenciais, logaritmos e ativacoes usadas em ML. |
+| [`0_1_pre_calculo_funcoes_ml.ipynb`](notebooks/00-matematica/0_1_pre_calculo_funcoes_ml.ipynb) | 90 | Revisao de funcoes, algebra basica, exponenciais, logaritmos e ativacoes usadas em ML. |
 | [`0_2_algebra_linear_vetores.ipynb`](notebooks/00-matematica/0_2_algebra_linear_vetores.ipynb) | 50 | Vetores, produto interno, normas, distancias, similaridade e projecoes aplicadas a ML. |
-| [`0_3_algebra_linear_matrizes.ipynb`](notebooks/00-matematica/0_3_algebra_linear_matrizes.ipynb) | 101 | Matrizes, transformacoes lineares, sistemas, autovalores, PCA, SVD e recomendacao. |
-| [`0_4_calculo_derivadas.ipynb`](notebooks/00-matematica/0_4_calculo_derivadas.ipynb) | 108 | Limites, derivadas, gradientes, Jacobiano, Hessiano, gradient descent e backpropagation. |
-| [`0_5_calculo_integrais_series.ipynb`](notebooks/00-matematica/0_5_calculo_integrais_series.ipynb) | 113 | Integrais, series, metodos numericos, AUC, Taylor, Monte Carlo e conexoes com probabilidade. |
+| [`0_3_algebra_linear_matrizes.ipynb`](notebooks/00-matematica/0_3_algebra_linear_matrizes.ipynb) | 78 | Matrizes, transformacoes lineares, sistemas, autovalores, PCA, SVD e recomendacao. |
+| [`0_4_calculo_derivadas.ipynb`](notebooks/00-matematica/0_4_calculo_derivadas.ipynb) | 69 | Limites, derivadas, gradientes, Jacobiano, Hessiano, gradient descent e backpropagation. |
+| [`0_5_calculo_integrais_series.ipynb`](notebooks/00-matematica/0_5_calculo_integrais_series.ipynb) | 74 | Integrais, series, metodos numericos, AUC, Taylor, Monte Carlo e conexoes com probabilidade. |
 | [`0_6_probabilidade_fundamentos.ipynb`](notebooks/00-matematica/0_6_probabilidade_fundamentos.ipynb) | 63 | Eventos, probabilidade condicional, Bayes, variaveis aleatorias e distribuicoes fundamentais. |
 | [`0_7_probabilidade_avancada.ipynb`](notebooks/00-matematica/0_7_probabilidade_avancada.ipynb) | 58 | Distribuicoes conjuntas, MLE, inferencia bayesiana, normal multivariada e GMM. |
 | [`0_8_otimizacao_ml.ipynb`](notebooks/00-matematica/0_8_otimizacao_ml.ipynb) | 56 | Funcoes de custo, convexidade, GD, SGD, Momentum, AdaGrad, RMSprop, Adam e regularizacao. |
@@ -91,17 +91,17 @@ python3 tools/validate_notebooks.py
 | [`3_4_svm_kernel.ipynb`](notebooks/03-machine-learning/3_4_svm_kernel.ipynb) | 40 | Margens, vetores de suporte, kernels, gamma, C e classificacao nao-linear. |
 | [`3_5_clustering.ipynb`](notebooks/03-machine-learning/3_5_clustering.ipynb) | 38 | K-Means, DBSCAN, clustering hierarquico, GMM e avaliacao de clusters. |
 | [`3_6_reducao_dimensionalidade.ipynb`](notebooks/03-machine-learning/3_6_reducao_dimensionalidade.ipynb) | 38 | Maldicao da dimensionalidade, PCA, t-SNE, UMAP, interpretacao e visualizacao. |
-| [`3_0_tutorial_from_scratch.ipynb`](notebooks/03-machine-learning/3_0_tutorial_from_scratch.ipynb) | 53 | Fluxo completo de classificacao, da preparacao dos dados a avaliacao de modelos. |
+| [`3_0_tutorial_from_scratch.ipynb`](notebooks/03-machine-learning/3_0_tutorial_from_scratch.ipynb) | 51 | Fluxo completo de classificacao, da preparacao dos dados a avaliacao de modelos. |
 
 ### 04 - Deep Learning
 
 | Notebook | Celulas | Descricao |
 |---|---:|---|
-| [`4_1_fundamentos_redes_neurais.ipynb`](notebooks/04-deep-learning/4_1_fundamentos_redes_neurais.ipynb) | 39 | Neuronios, ativacoes, perceptron, MLP, backpropagation e treinamento basico. |
+| [`4_1_fundamentos_redes_neurais.ipynb`](notebooks/04-deep-learning/4_1_fundamentos_redes_neurais.ipynb) | 40 | Neuronios, ativacoes, perceptron, MLP, backpropagation e treinamento basico. |
 | [`4_2_arquiteturas_deep.ipynb`](notebooks/04-deep-learning/4_2_arquiteturas_deep.ipynb) | 41 | CNNs, RNNs, Transformers, profundidade, conectividade e hierarquia de features. |
 | [`4_3_treinamento_deep.ipynb`](notebooks/04-deep-learning/4_3_treinamento_deep.ipynb) | 39 | Inicializacao, otimizadores, regularizacao, normalizacao, schedules e diagnostico. |
 | [`4_4_transfer_learning.ipynb`](notebooks/04-deep-learning/4_4_transfer_learning.ipynb) | 35 | Feature extraction, fine-tuning, congelamento de camadas e adaptacao de modelos. |
-| [`4_5_aceleracao_hardware.ipynb`](notebooks/04-deep-learning/4_5_aceleracao_hardware.ipynb) | 35 | GPU, batching, precisao mista, memoria, paralelismo e otimizacao de treino. |
+| [`4_5_aceleracao_hardware.ipynb`](notebooks/04-deep-learning/4_5_aceleracao_hardware.ipynb) | 36 | GPU, batching, precisao mista, memoria, paralelismo e otimizacao de treino. |
 | [`4_6_otimizacao_python.ipynb`](notebooks/04-deep-learning/4_6_otimizacao_python.ipynb) | 35 | Profiling, vetorizacao, memoria, paralelismo e melhoria de performance em pipelines. |
 
 ### 05 - Dominios Aplicados
@@ -110,7 +110,7 @@ python3 tools/validate_notebooks.py
 
 | Notebook | Celulas | Descricao |
 |---|---:|---|
-| [`5A_1_cnn_fundamentos.ipynb`](notebooks/05-dominios-aplicados/05A-computer-vision/5A_1_cnn_fundamentos.ipynb) | 42 | Convolucao, pooling, feature maps, receptive field e blocos de CNNs. |
+| [`5A_1_cnn_fundamentos.ipynb`](notebooks/05-dominios-aplicados/05A-computer-vision/5A_1_cnn_fundamentos.ipynb) | 43 | Convolucao, pooling, feature maps, receptive field e blocos de CNNs. |
 | [`5A_2_classificacao_imagens.ipynb`](notebooks/05-dominios-aplicados/05A-computer-vision/5A_2_classificacao_imagens.ipynb) | 35 | Dados de imagem, augmentations, desbalanceamento, avaliacao e interpretabilidade. |
 | [`5A_3_deteccao_objetos.ipynb`](notebooks/05-dominios-aplicados/05A-computer-vision/5A_3_deteccao_objetos.ipynb) | 41 | Bounding boxes, IoU, NMS, anchor boxes, YOLO, R-CNN e metricas de deteccao. |
 | [`5A_4_segmentacao.ipynb`](notebooks/05-dominios-aplicados/05A-computer-vision/5A_4_segmentacao.ipynb) | 38 | Segmentacao semantica, instance segmentation, panoptic segmentation, U-Net e metricas. |
@@ -134,7 +134,7 @@ python3 tools/validate_notebooks.py
 | [`5C_1_gans.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_1_gans.ipynb) | 26 | Gerador, discriminador, treinamento adversarial, instabilidade e aplicacoes generativas. |
 | [`5C_2_vaes.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_2_vaes.ipynb) | 52 | Encoder, decoder, espaco latente, ELBO, KL divergence, beta-VAE e interpolacao. |
 | [`5C_3_diffusion_models.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_3_diffusion_models.ipynb) | 94 | Forward process, denoising, scheduler, sampling e fundamentos de diffusion models. |
-| [`5C_4_finetuning_generativo.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_4_finetuning_generativo.ipynb) | 31 | Transfer learning, LoRA, adapters, datasets, avaliacao e riscos de overfitting. |
+| [`5C_4_finetuning_generativo.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_4_finetuning_generativo.ipynb) | 30 | Transfer learning, LoRA, adapters, datasets, avaliacao e riscos de overfitting. |
 | [`5C_5_multimodal_ai.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_5_multimodal_ai.ipynb) | 81 | Representacoes multimodais, texto-imagem, audio, video, alinhamento e avaliacao. |
 
 #### 05D - Series Temporais
@@ -151,9 +151,9 @@ python3 tools/validate_notebooks.py
 | Notebook | Celulas | Descricao |
 |---|---:|---|
 | [`6_1_deploy_modelos.ipynb`](notebooks/06-mlops/6_1_deploy_modelos.ipynb) | 31 | Serializacao, API, contratos, versionamento, health checks e preparacao para producao. |
-| [`6_2_mlflow_tracking.ipynb`](notebooks/06-mlops/6_2_mlflow_tracking.ipynb) | 28 | Experimentos, parametros, metricas, artifacts, model registry e comparacao de runs. |
-| [`6_3_monitoramento_drift.ipynb`](notebooks/06-mlops/6_3_monitoramento_drift.ipynb) | 40 | Data drift, concept drift, PSI, KS test, thresholds, alertas e retraining. |
-| [`6_4_pipelines_automatizados.ipynb`](notebooks/06-mlops/6_4_pipelines_automatizados.ipynb) | 47 | CI/CD, testes, orquestracao, feature stores, DVC e pipelines end-to-end. |
+| [`6_2_mlflow_tracking.ipynb`](notebooks/06-mlops/6_2_mlflow_tracking.ipynb) | 27 | Experimentos, parametros, metricas, artifacts, model registry e comparacao de runs. |
+| [`6_3_monitoramento_drift.ipynb`](notebooks/06-mlops/6_3_monitoramento_drift.ipynb) | 37 | Data drift, concept drift, PSI, KS test, thresholds, alertas e retraining. |
+| [`6_4_pipelines_automatizados.ipynb`](notebooks/06-mlops/6_4_pipelines_automatizados.ipynb) | 40 | CI/CD, testes, orquestracao, feature stores, DVC e pipelines end-to-end. |
 
 ## Politica de Exercicios
 

@@ -212,36 +212,6 @@ def make_blobs(n_samples=100, centers=2, n_features=2, random_state=None):
     return X, y
 """
 
-# 0_3 cell 88 — implement the SVD exercise so the cell stops failing.
-SVD_FILL_088 = """# EXERCICIO 3: Decomposicao em Autovalores (solucao preenchida)
-# Implementa SVD truncado para reducao de dimensionalidade.
-
-import numpy as np
-
-# Crie matriz aleatoria 10x8
-A = np.random.randn(10, 8)
-
-# SVD completo
-U, s, Vt = np.linalg.svd(A, full_matrices=False)
-
-# Mantem apenas os 3 maiores valores singulares
-k = 3
-U_k = U[:, :k]
-s_k = s[:k]
-Vt_k = Vt[:k, :]
-
-# Reconstrucao aproximada
-A_approx = U_k @ np.diag(s_k) @ Vt_k
-
-# Erro de reconstrucao (Frobenius)
-erro_frobenius = np.linalg.norm(A - A_approx)
-
-print(f"Forma original: {A.shape}")
-print(f"Valores singulares: {s}")
-print(f"Erro de reconstrucao (rank-{k}): {erro_frobenius:.6f}")
-print(f"Razao de compressao: {8*10 / (10*3 + 3 + 3*8):.2f}x")
-"""
-
 # 4_2 cell 14 needs pd; the cell itself uses pd.DataFrame for a comparison table.
 # We patch the SETUP cell to import pandas (above). No need to touch cell 14.
 
@@ -249,13 +219,6 @@ print(f"Razao de compressao: {8*10 / (10*3 + 3 + 3*8):.2f}x")
 
 PATCHES = [
     # (notebook_relative_path, finder_substring, new_source)
-
-    # 00-matematica: SVD exercise
-    (
-        "00-matematica/0_3_algebra_linear_matrizes.ipynb",
-        "TAREFA DO ALUNO: Implemente SVD truncado",
-        SVD_FILL_088,
-    ),
 
     # 01-estatistica
     (
@@ -331,6 +294,13 @@ def patch_one(nb_rel: str, needle: str, new_src: str) -> str:
         if isinstance(src, list):
             src = "".join(src)
         if needle in src and src.strip() != new_src.strip():
+            # Refuse to overwrite a restored exercise scaffold. The
+            # exercise/solution contract is owned by restore_exercises.py;
+            # rewriting an `exercise`-tagged cell here would re-collapse
+            # scaffold + solution into the same cell.
+            tags = (cell.metadata or {}).get("tags") or []
+            if "exercise" in tags and "solution" not in tags:
+                return "skipped-exercise-scaffold"
             cell.source = new_src
             cell.outputs = []
             cell.execution_count = None

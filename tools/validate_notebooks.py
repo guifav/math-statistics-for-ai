@@ -37,6 +37,104 @@ CODE_KEYWORDS_IN_COMMENT_RE = re.compile(
     r"\b(def|import|from|return|class|for|while|if|elif|else|print|lambda|with|try|except)\b\s*[\(:]?"
 )
 
+# nbformat 4.5+ requires every cell to carry an id matching ^[a-zA-Z0-9_-]+$.
+CELL_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+# Markdown cells whose source looks like Python code (multiple top-level
+# Python statements + a print/import) usually indicate a cell that was meant
+# to be a code cell. They escape the existing code-only-comment heuristic
+# because that heuristic only runs on code cells.
+MD_CODE_KEYWORDS = re.compile(
+    r"^\s*(print\s*\(|def \w+\s*\(|class \w+\s*[\(:]|import \S+|from \S+ import)",
+    re.M,
+)
+
+# Heading marker glued to non-heading content on the same line (the
+# newline-stripping corruption fingerprint).
+COLLAPSED_HEADING_RE = re.compile(r"^#{1,6} [^\n]{6,}[a-z]{3,}[A-Z]", re.M)
+
+# Triple-backtick fence (any language) — used to strip code blocks before
+# running prose-only validators that would false-fire on `# python comment`.
+FENCE_BLOCK_RE = re.compile(r"```[\s\S]*?```")
+
+# Match a fenced block and inspect its first line for newline-stripping
+# fingerprints (multiple `#` comments glued together or language tag glued to
+# code on the same line as the opener). Multi-line blocks are extracted and
+# only the OPENING line is examined, so legit multi-line code is safe.
+FENCE_OPEN_RE = re.compile(r"```([^\n]*)")
+KNOWN_FENCE_LANGS = (
+    "python", "py", "bash", "sh", "shell", "sql", "json", "yaml", "toml",
+    "javascript", "js", "typescript", "ts", "html", "css", "markdown", "md",
+    "rust", "go", "java", "cpp", "c", "ruby", "rb", "r", "php", "swift",
+    "kotlin", "scala", "perl", "lua",
+)
+GLUED_COMMENT_RE = re.compile(r"[a-zA-Z0-9\)\]\}]#\s*[A-Za-z]")
+
+# Full-fence-body extraction used to inspect inner lines for residual
+# corruption (the opening-line check alone misses content inside the fence).
+FENCE_BODY_RE = re.compile(r"```([^\n]*)\n([\s\S]*?)```", re.MULTILINE)
+
+# Closing paren/bracket glued to an uppercase identifier (e.g. `y.std()X_train`).
+CLOSER_GLUED_UPPER_RE = re.compile(r"[\)\]][A-Z][a-zA-Z_0-9]*\s*[,=\.\(]")
+
+# Lowercase word ending glued to an underscore-style identifier whose tuple
+# eventually leads to an `=` assignment (`testey_normalized = `,
+# `barX_train, X_test = split(...)`). Restricted to `=` (not bare call) so
+# legit code embedded in comments like `# torch.manual_seed(42)` isn't
+# flagged.
+WORD_GLUED_UNDERSCORE_ID_RE = re.compile(
+    r"(?<![a-zA-Z0-9_\.])[a-z]{3,}[a-zA-Z]_[a-zA-Z]\w*(?:\s*,\s*\w+)*\s*="
+)
+
+# Lowercase word glued to lowercase identifier with assignment — ambiguous
+# boundary that the restorer cannot fix automatically. Flagged for human
+# review (e.g. `importaresultado = B @ A`, `wordvariable = ...`).
+WORD_GLUED_LOWER_ASSIGN_RE = re.compile(
+    r"(?<![a-zA-Z0-9_])[a-z]{4,}[a-z][a-z_0-9]{6,}\s*=\s*[A-Za-z\d\(\[\{]"
+)
+
+# CamelCase boundary that suggests a comment-end glued to code
+# (`matricialA @ B`, `decisaoIf ...`). We require a non-Camel context to
+# avoid flagging legitimate compound names like `KFoldClassifier`.
+LOWER_UPPER_OPERATOR_RE = re.compile(
+    r"(?<![A-Z])[a-z]{4,}[A-Z](?:\s*[\*+\-/=<>%&|@,])"
+)
+
+# Comment word glued directly to a Python keyword (`sempreif `, `endwhile `).
+# Restricted to a known keyword followed by an opening paren/space to avoid
+# matching arbitrary identifiers.
+WORD_GLUED_KEYWORD_RE = re.compile(
+    r"(?<![A-Za-z0-9_])[a-z]{3,}"
+    r"(?:if|while|for|return|raise|elif|else|pass|break|continue|yield|with|try|except|finally|class|def|import|from)"
+    r"[ \(]"
+)
+
+# Bullet item glued to the previous line OUTSIDE a fence (e.g.
+# `BPTT)- **5A_1**` or `dados?- [ ] checkbox`). The `(?<![\s])` keeps math
+# `F(5) - F(2)` safe.
+BULLET_GLUED_RE = re.compile(
+    r"(?<![\s\-])(?<=[A-Za-z\?\.!\)])- (?:\[|[A-Za-z*])"
+)
+
+
+def _first_line_has_glued_lang(first_line: str) -> bool:
+    """Detect `lang` glued to identifier on a fence opener.
+
+    Returns True only when the line starts with a known language name and
+    is *immediately* followed by another letter/underscore — i.e. the lang
+    tag was concatenated to code by the newline-stripping corruption.
+
+    Languages are tested longest-first so that `python` is matched before
+    `py` and we never report a false positive on a clean `python` opener.
+    """
+    for lang in sorted(KNOWN_FENCE_LANGS, key=len, reverse=True):
+        if first_line.startswith(lang):
+            rest = first_line[len(lang):]
+            if not rest:
+                return False
+            return rest[0].isalpha() or rest[0] == "_"
+    return False
+
 
 def _non_empty_lines(text: str) -> list[str]:
     return [line for line in text.splitlines() if line.strip()]
@@ -153,6 +251,20 @@ def _check_exercise_solution_completeness(path: Path, cells: list) -> list[str]:
     return errors
 
 
+def _md_looks_like_python(text: str) -> bool:
+    """Heuristic for rule 6: markdown cell containing raw Python code.
+
+    Triggers when the cell has 2+ Python-style top-level statements AND no
+    triple-backtick fence framing them. Such cells should be code cells (or
+    wrapped in a fence) — leaving them as markdown breaks rendering and hides
+    the code from execution.
+    """
+    if "```" in text:
+        return False
+    hits = MD_CODE_KEYWORDS.findall(text)
+    return len(hits) >= 2
+
+
 def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
     errors: list[str] = []
 
@@ -178,6 +290,9 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
     if not metadata.get("course_title") or not metadata.get("course_description"):
         errors.append(f"{path}: missing course title/description metadata")
 
+    nbformat_minor = nb.get("nbformat_minor", 0)
+    requires_cell_ids = nb.get("nbformat", 4) >= 4 and nbformat_minor >= 5
+
     previous_markdown_norm: str | None = None
     for cell_index, cell in enumerate(cells, start=1):
         text = source_text(cell)
@@ -196,6 +311,15 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
                     f"{path}: cell {cell_index}: references missing notebook {notebook_name}"
                 )
 
+        # Rule 6: every cell must carry a valid id in nbformat 4.5+.
+        if requires_cell_ids:
+            cell_id = cell.get("id")
+            if cell_id is None or not cell_id or not CELL_ID_RE.match(cell_id):
+                errors.append(
+                    f"{path}: cell {cell_index}: invalid cell id {cell_id!r} "
+                    f"(must match ^[a-zA-Z0-9_-]+$)"
+                )
+
         # Rule 1: consecutive duplicate markdown cells.
         if cell_type == "markdown":
             normalized = text.strip()
@@ -204,6 +328,116 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
                     f"{path}: cell {cell_index}: consecutive duplicate markdown cell"
                 )
             previous_markdown_norm = normalized
+
+            # Rule 7: markdown cell that is actually Python code (should be a
+            # code cell, or wrapped in a triple-backtick fence).
+            if _md_looks_like_python(text):
+                errors.append(
+                    f"{path}: cell {cell_index}: markdown cell contains raw Python "
+                    f"code without a fence (should be a code cell)"
+                )
+
+            # Strip fence blocks before checking heading/code rules — Python
+            # comments inside a ` ```python `` block start with `# ` and would
+            # otherwise be misread as markdown headings.
+            text_no_fences = FENCE_BLOCK_RE.sub("", text)
+
+            # Rule 8: heading marker glued to non-heading content on the
+            # same line — fingerprint of the newline-stripping corruption.
+            if COLLAPSED_HEADING_RE.search(text_no_fences):
+                errors.append(
+                    f"{path}: cell {cell_index}: heading is glued to content on "
+                    f"the same line (markdown line breaks were stripped)"
+                )
+
+            # Rule 9: fenced code block opener glued to code on same line, or
+            # any fence whose inner body has comments concatenated without
+            # newlines (`text# next-comment`). Multi-line fences with clean
+            # comment-per-line layout are not flagged.
+            for fm in FENCE_OPEN_RE.finditer(text):
+                first_line = fm.group(1)
+                if _first_line_has_glued_lang(first_line):
+                    errors.append(
+                        f"{path}: cell {cell_index}: fenced code block opener "
+                        f"is glued to code on the same line "
+                        f"(```{first_line[:30]}...)"
+                    )
+                    break
+                if GLUED_COMMENT_RE.search(first_line):
+                    errors.append(
+                        f"{path}: cell {cell_index}: fenced code block has "
+                        f"multiple `#` comments glued without newlines"
+                    )
+                    break
+
+            # Rule 10: fence INNER body has residual corruption fingerprints.
+            # Scans the body line by line. Inner identifiers with underscores
+            # are common in legit Python (`read_csv`, `query_vec`), so the
+            # word-glued-to-underscore-identifier check is only applied to
+            # lines that START with `#` (Python comments) — where the
+            # corruption shows up as a comment glued to a code statement.
+            for fbm in FENCE_BODY_RE.finditer(text):
+                body = fbm.group(2)
+                for body_line in body.split("\n"):
+                    if GLUED_COMMENT_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has comments glued without a newline "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
+                    if CLOSER_GLUED_UPPER_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has `)X_identifier` glued statement boundary "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
+                    is_comment_line = body_line.lstrip().startswith("#")
+                    if is_comment_line and WORD_GLUED_UNDERSCORE_ID_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has comment word glued to underscore identifier "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
+                    if is_comment_line and WORD_GLUED_LOWER_ASSIGN_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has ambiguous word-glued-to-variable boundary "
+                            f"that needs manual fix (`{body_line[:60]}`)"
+                        )
+                        break
+                    if is_comment_line and LOWER_UPPER_OPERATOR_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has lowercase-Upper boundary glued to operator "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
+                    if WORD_GLUED_KEYWORD_RE.search(body_line):
+                        errors.append(
+                            f"{path}: cell {cell_index}: fenced code block "
+                            f"has word glued to Python keyword "
+                            f"(`{body_line[:60]}`)"
+                        )
+                        break
+                else:
+                    continue
+                break
+
+            # Rule 11: bullet item glued to prior content OUTSIDE a fence
+            # (`BPTT)- **5A_1**`, `dados?- [ ] checkbox`). Math like
+            # `F(5) - F(2)` (with whitespace around the dash) is not flagged.
+            text_no_fences = FENCE_BLOCK_RE.sub("", text)
+            if BULLET_GLUED_RE.search(text_no_fences):
+                match = BULLET_GLUED_RE.search(text_no_fences)
+                start = max(0, match.start() - 30)
+                end = min(len(text_no_fences), match.end() + 30)
+                errors.append(
+                    f"{path}: cell {cell_index}: bullet item glued to prior "
+                    f"content (`{text_no_fences[start:end]!r}`)"
+                )
         else:
             previous_markdown_norm = None
 

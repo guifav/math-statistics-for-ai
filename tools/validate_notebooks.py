@@ -53,6 +53,42 @@ MD_CODE_KEYWORDS = re.compile(
 # newline-stripping corruption fingerprint).
 COLLAPSED_HEADING_RE = re.compile(r"^#{1,6} [^\n]{6,}[a-z]{3,}[A-Z]", re.M)
 
+# Triple-backtick fence (any language) — used to strip code blocks before
+# running prose-only validators that would false-fire on `# python comment`.
+FENCE_BLOCK_RE = re.compile(r"```[\s\S]*?```")
+
+# Match a fenced block and inspect its first line for newline-stripping
+# fingerprints (multiple `#` comments glued together or language tag glued to
+# code on the same line as the opener). Multi-line blocks are extracted and
+# only the OPENING line is examined, so legit multi-line code is safe.
+FENCE_OPEN_RE = re.compile(r"```([^\n]*)")
+KNOWN_FENCE_LANGS = (
+    "python", "py", "bash", "sh", "shell", "sql", "json", "yaml", "toml",
+    "javascript", "js", "typescript", "ts", "html", "css", "markdown", "md",
+    "rust", "go", "java", "cpp", "c", "ruby", "rb", "r", "php", "swift",
+    "kotlin", "scala", "perl", "lua",
+)
+GLUED_COMMENT_RE = re.compile(r"[a-zA-Z0-9\)\]\}]#\s*[A-Za-z]")
+
+
+def _first_line_has_glued_lang(first_line: str) -> bool:
+    """Detect `lang` glued to identifier on a fence opener.
+
+    Returns True only when the line starts with a known language name and
+    is *immediately* followed by another letter/underscore — i.e. the lang
+    tag was concatenated to code by the newline-stripping corruption.
+
+    Languages are tested longest-first so that `python` is matched before
+    `py` and we never report a false positive on a clean `python` opener.
+    """
+    for lang in sorted(KNOWN_FENCE_LANGS, key=len, reverse=True):
+        if first_line.startswith(lang):
+            rest = first_line[len(lang):]
+            if not rest:
+                return False
+            return rest[0].isalpha() or rest[0] == "_"
+    return False
+
 
 def _non_empty_lines(text: str) -> list[str]:
     return [line for line in text.splitlines() if line.strip()]
@@ -255,13 +291,38 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
                     f"code without a fence (should be a code cell)"
                 )
 
+            # Strip fence blocks before checking heading/code rules — Python
+            # comments inside a ` ```python `` block start with `# ` and would
+            # otherwise be misread as markdown headings.
+            text_no_fences = FENCE_BLOCK_RE.sub("", text)
+
             # Rule 8: heading marker glued to non-heading content on the
             # same line — fingerprint of the newline-stripping corruption.
-            if COLLAPSED_HEADING_RE.search(text):
+            if COLLAPSED_HEADING_RE.search(text_no_fences):
                 errors.append(
                     f"{path}: cell {cell_index}: heading is glued to content on "
                     f"the same line (markdown line breaks were stripped)"
                 )
+
+            # Rule 9: fenced code block opener glued to code on same line, or
+            # any fence whose inner body has comments concatenated without
+            # newlines (`text# next-comment`). Multi-line fences with clean
+            # comment-per-line layout are not flagged.
+            for fm in FENCE_OPEN_RE.finditer(text):
+                first_line = fm.group(1)
+                if _first_line_has_glued_lang(first_line):
+                    errors.append(
+                        f"{path}: cell {cell_index}: fenced code block opener "
+                        f"is glued to code on the same line "
+                        f"(```{first_line[:30]}...)"
+                    )
+                    break
+                if GLUED_COMMENT_RE.search(first_line):
+                    errors.append(
+                        f"{path}: cell {cell_index}: fenced code block has "
+                        f"multiple `#` comments glued without newlines"
+                    )
+                    break
         else:
             previous_markdown_norm = None
 

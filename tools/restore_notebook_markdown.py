@@ -228,21 +228,91 @@ def _restore_prose(text: str) -> str:
     return combined.strip()
 
 
-FENCE_RE = re.compile(r"```[\s\S]*?```")
+FENCE_RE = re.compile(r"```([^\n`]*?)```|```([^\n`]*)\n([\s\S]*?)```")
+FENCE_TOKEN_KNOWN_LANGS = {
+    "python", "py", "bash", "sh", "shell", "sql", "json", "yaml", "toml",
+    "javascript", "js", "typescript", "ts", "html", "css", "markdown", "md",
+    "rust", "go", "java", "cpp", "c", "ruby", "rb", "r", "php", "swift",
+    "kotlin", "scala", "perl", "lua",
+}
+TREE_BRANCH_CHARS = "├└│"
+
+
+def _restore_fence_content(lang: str, content: str) -> str:
+    """Re-insert line breaks inside a collapsed fenced code/diagram block.
+
+    Safe to call on partially-restored content: each regex only inserts a
+    newline at a corruption boundary, so a fence that's already clean is a
+    no-op.
+    """
+    if len(content) < 40:
+        return content
+
+    if lang.lower() in {"python", "py"}:
+        # Insert newline before every `#` that is glued to alphanumeric (or
+        # a closing quote/paren) — splits "code# next-comment" patterns.
+        content = re.sub(r'(?<=[a-zA-Z0-9_\)\]\}"\'])(?=#\s)', "\n", content)
+        # `)identifier_=` -> `)\nidentifier_=` (statement boundary).
+        content = re.sub(r"(?<=\))(?=[a-zA-Z_][a-zA-Z0-9_]*\s*=)", "\n", content)
+        # `)keyword` -> `)\nkeyword` (statement boundary before for/while/if).
+        content = re.sub(
+            r"(?<=\))(?=(?:for|while|if|elif|else|return|yield|with|try|except|finally|raise|class|def|import|from|pass|break|continue)\s)",
+            "\n",
+            content,
+        )
+        # All-caps comment word followed by lowercase code.
+        content = re.sub(r"(#[^\n]*[A-Z]{3,})(?=[a-z])", r"\1\n", content)
+        # `wordA *` or `wordA = ` — statement starts with a single uppercase
+        # operand glued to a comment word. Operator/space/newline must follow.
+        content = re.sub(
+            r"(?<=[a-z]{3})(?=[A-Z](?:\s*[\*+\-/=<>%&|@]| =|$))",
+            "\n",
+            content,
+        )
+        # Lowercase letter followed by uppercase letter + lowercase glued
+        # (e.g. `matricialA @ B` joining a comment-end to a statement).
+        content = re.sub(r"(?<=[a-z]{3})(?=[A-Z][a-z])", "\n", content)
+    elif any(ch in content for ch in TREE_BRANCH_CHARS):
+        # Tree diagrams: split before any branch marker.
+        content = re.sub(r"(?<=.)(?=[│├└])", "\n", content)
+        content = re.sub(r"\n{2,}", "\n", content)
+
+    return content
+
+
+def _restore_fence(match: re.Match[str]) -> str:
+    no_break_group = match.group(1)
+    if no_break_group is not None:
+        # ```lang+content``` all on one line; split lang from content if a known
+        # language is glued to code, otherwise treat the whole thing as content.
+        body = no_break_group
+        for lang in sorted(FENCE_TOKEN_KNOWN_LANGS, key=len, reverse=True):
+            if body.startswith(lang) and len(body) > len(lang) and body[len(lang)] not in (" ", "\n"):
+                rest = body[len(lang):]
+                rest = _restore_fence_content(lang, rest).strip("\n")
+                return f"```{lang}\n{rest}\n```"
+        # No known lang prefix; still try restoring as best-effort
+        restored = _restore_fence_content("", body).strip("\n")
+        if "\n" in restored:
+            return f"```\n{restored}\n```"
+        return match.group(0)
+    # Form ```lang\ncontent\n``` (already has at least one newline after lang).
+    lang = match.group(2)
+    content = match.group(3)
+    restored = _restore_fence_content(lang, content).strip("\n")
+    return f"```{lang}\n{restored}\n```"
 
 
 def restore_text(text: str) -> str:
-    if not needs_restoration(text):
+    if not needs_restoration(text) and not FENCE_RE.search(text):
         return text
 
-    # Preserve content inside triple-backtick fences — prose heuristics would
-    # mangle code worse than the collapsed state already does.
     pieces: list[str] = []
     cursor = 0
     for fence in FENCE_RE.finditer(text):
         if fence.start() > cursor:
             pieces.append(_restore_prose(text[cursor:fence.start()]))
-        pieces.append(fence.group(0))
+        pieces.append(_restore_fence(fence))
         cursor = fence.end()
     if cursor < len(text):
         pieces.append(_restore_prose(text[cursor:]))

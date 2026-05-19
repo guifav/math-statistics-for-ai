@@ -219,6 +219,15 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
         if cell_type != "code":
             continue
 
+        if cell.get("outputs"):
+            errors.append(
+                f"{path}: cell {cell_index}: committed notebooks must not contain outputs"
+            )
+        if cell.get("execution_count") is not None:
+            errors.append(
+                f"{path}: cell {cell_index}: committed notebooks must not contain execution counts"
+            )
+
         # Rule 2: code cell that is entirely a comment block (likely broken).
         if _is_comment_only_code(text):
             errors.append(
@@ -263,8 +272,23 @@ def validate_repository() -> list[str]:
     for path in notebooks:
         errors.extend(validate_notebook(path, notebook_names))
 
+    allowed_root_entries = {
+        "README.md",
+        "LICENSE",
+        "CONTRIBUTING.md",
+        "CODE_OF_CONDUCT.md",
+        "SECURITY.md",
+        "requirements.txt",
+        "requirements-gpu.txt",
+        ".gitignore",
+        ".github",
+        "tools",
+        "notebooks",
+        ".git",
+    }
+
     for path in sorted(ROOT.glob("*")):
-        if path.name in {"README.md", "LICENSE", "requirements.txt", "requirements-gpu.txt", ".gitignore", ".github", "tools", "notebooks", ".git"}:
+        if path.name in allowed_root_entries:
             continue
         if path.is_file() and path.suffix.lower() in {".md", ".txt"}:
             errors.append(f"{path}: documentation must be consolidated into README.md")

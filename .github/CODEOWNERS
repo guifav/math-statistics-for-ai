@@ -1,0 +1,9 @@
+# Require maintainer review for repository-wide changes.
+* @guifav
+
+# Keep CI and contribution governance reviewed explicitly.
+/.github/ @guifav
+/tools/ @guifav
+/CONTRIBUTING.md @guifav
+/CODE_OF_CONDUCT.md @guifav
+/SECURITY.md @guifav

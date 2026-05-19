@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Reportar vulnerabilidade
+    url: https://github.com/guifav/math-statistics-for-ai/security/policy
+    about: Leia a politica de seguranca antes de reportar problemas sensiveis.

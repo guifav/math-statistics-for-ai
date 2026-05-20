@@ -10,9 +10,10 @@ Cada função retorna o numero de mudanças aplicadas (para log).
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
-from collections import OrderedDict
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +25,21 @@ def load(p: Path) -> dict:
 
 
 def save(p: Path, nb: dict) -> None:
-    p.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    """Save atomico: escreve em tempfile e faz rename. Evita corromper o
+    notebook se o processo for interrompido no meio da escrita."""
+    data = json.dumps(nb, indent=1, ensure_ascii=False) + "\n"
+    # tempfile no MESMO diretorio para garantir rename atomico no mesmo fs
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=p.name + ".", suffix=".tmp", dir=str(p.parent)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data)
+        os.replace(tmp_path, p)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
 
 
 def get_src(cell: dict) -> str:
@@ -139,6 +154,43 @@ OBSOLETE_NB_NAMES = {
     "3_2_algebra_linear.ipynb",
     "5_2_clustering.ipynb",
 }
+
+
+# Slugs em crase (sem .ipynb) que apontam para notebooks inexistentes.
+# Diferente de OBSOLETE_REF_REPLACEMENTS, estes nao tem versao .ipynb no texto —
+# aparecem em tabelas tipo "| Cross-validation | ... | `5_3_interpretabilidade` |".
+# Aplicados como word-boundary substitutions para nao casar prefixos de slugs reais.
+INVALID_SLUG_REPLACEMENTS = {
+    "2_3_funcoes_de_perda": "0_8_otimizacao_ml",
+    "4_2_otimizacao": "0_8_otimizacao_ml",
+    "4_3_bayesian_optimization": "0_8_otimizacao_ml",
+    "5_3_interpretabilidade": "1_4_regressao_estatistica",
+    "1_4_regressao": "1_4_regressao_estatistica",
+    "4_4_monitoramento": "6_3_monitoramento_drift",
+    "3_3_reducao_dimensionalidade": "3_6_reducao_dimensionalidade",
+    "6_1_comunicacao": "6_1_deploy_modelos",
+}
+
+
+def fix_invalid_backtick_slugs(nb: dict, _p: Path) -> int:
+    """Substitui slugs em crase que apontam para notebooks inexistentes.
+    Usa boundary `..` para nao casar prefixos de slugs reais (ex: `1_4_regressao`
+    nao deve casar dentro de `1_4_regressao_estatistica`).
+    """
+    changes = 0
+    for cell in nb.get("cells", []):
+        if cell.get("cell_type") != "markdown":
+            continue
+        src = get_src(cell)
+        new_src = src
+        for bad, good in INVALID_SLUG_REPLACEMENTS.items():
+            # so dentro de crase, com final exato (sem suffix de slug real)
+            pat = re.compile(r"`" + re.escape(bad) + r"`")
+            new_src = pat.sub(f"`{good}`", new_src)
+        if new_src != src:
+            set_src(cell, new_src)
+            changes += 1
+    return changes
 
 
 def _apply_legacy_map(text: str) -> str:
@@ -395,6 +447,15 @@ SEMANTIC_REF_FIXES = [
     # 2_3 cell 41: "3. **4_1_fundamentos_redes_neurais**: Integrar coleta no pipeline completo de ML"
     (re.compile(r"3\. \*\*`4_1_fundamentos_redes_neurais`\*\*: Integrar coleta no pipeline completo de ML"),
      "3. **`3_0_tutorial_from_scratch`**: Integrar coleta no pipeline completo de ML"),
+    # 1_5 cell 33: "Todo o pipeline de `4_1_fundamentos_redes_neurais` e um experimento"
+    (re.compile(r"Todo o pipeline de `4_1_fundamentos_redes_neurais` e um experimento"),
+     "Todo o pipeline de `3_0_tutorial_from_scratch` e um experimento"),
+    # 1_5 cell 37 tabela: "| Cross-validation | `1_2` (bootstrap) | `4_1_fundamentos_redes_neurais` |"
+    (re.compile(r"\| Cross-validation \| `1_2` \(bootstrap\) \| `4_1_fundamentos_redes_neurais` \|"),
+     "| Cross-validation | `1_2` (bootstrap) | `3_0_tutorial_from_scratch` |"),
+    # 1_5 cell 37: "3. **`4_1_fundamentos_redes_neurais`**: O pipeline completo que usa CV..."
+    (re.compile(r"3\. \*\*`4_1_fundamentos_redes_neurais`\*\*: O pipeline completo que usa CV como design experimental"),
+     "3. **`3_0_tutorial_from_scratch`**: O pipeline completo que usa CV como design experimental"),
 ]
 
 
@@ -668,9 +729,10 @@ def leaked_metadata(nb: dict, _p: Path) -> int:
         new_src = src
         for pat in LEAKED_METADATA_LINES:
             new_src = pat.sub("", new_src)
-        # tira linhas em branco consecutivas resultantes
-        new_src = re.sub(r"\n{3,}", "\n\n", new_src)
+        # so colapsa newlines se algum padrao de metadata casou
+        # (evita reescrever cells com espacamento intencional)
         if new_src != src:
+            new_src = re.sub(r"\n{3,}", "\n\n", new_src)
             set_src(cell, new_src)
             changes += 1
     return changes
@@ -818,6 +880,24 @@ LOCAL_PATH_PATTERNS = [
 ]
 
 
+def _redact_paths(text: str) -> str:
+    new = text
+    for pat in LOCAL_PATH_PATTERNS:
+        new = pat.sub("<local-path-redacted>", new)
+    return new
+
+
+def _scrub_json_paths(obj):
+    """Aplica _redact_paths recursivamente em dicts/lists/strings (application/json output)."""
+    if isinstance(obj, str):
+        return _redact_paths(obj)
+    if isinstance(obj, list):
+        return [_scrub_json_paths(v) for v in obj]
+    if isinstance(obj, dict):
+        return {k: _scrub_json_paths(v) for k, v in obj.items()}
+    return obj
+
+
 def drop_local_paths(nb: dict, _p: Path) -> int:
     changes = 0
     for cell in nb.get("cells", []):
@@ -828,35 +908,36 @@ def drop_local_paths(nb: dict, _p: Path) -> int:
             text = out.get("text")
             if isinstance(text, list):
                 joined = "".join(text)
-                replaced = joined
-                for pat in LOCAL_PATH_PATTERNS:
-                    replaced = pat.sub("<local-path-redacted>", replaced)
+                replaced = _redact_paths(joined)
                 if replaced != joined:
                     out["text"] = replaced.splitlines(keepends=True)
                     changes += 1
             elif isinstance(text, str):
-                replaced = text
-                for pat in LOCAL_PATH_PATTERNS:
-                    replaced = pat.sub("<local-path-redacted>", replaced)
+                replaced = _redact_paths(text)
                 if replaced != text:
                     out["text"] = replaced
                     changes += 1
-            # data:text/plain pode estar em out['data']
             data = out.get("data", {})
-            if isinstance(data, dict):
-                for k, v in list(data.items()):
-                    if k.startswith("text") and isinstance(v, (str, list)):
-                        joined = "".join(v) if isinstance(v, list) else v
-                        replaced = joined
-                        for pat in LOCAL_PATH_PATTERNS:
-                            replaced = pat.sub("<local-path-redacted>", replaced)
-                        if replaced != joined:
-                            data[k] = (
-                                replaced.splitlines(keepends=True)
-                                if isinstance(v, list)
-                                else replaced
-                            )
-                            changes += 1
+            if not isinstance(data, dict):
+                continue
+            for k, v in list(data.items()):
+                # text/plain, text/html etc — string ou list-of-strings
+                if k.startswith("text") and isinstance(v, (str, list)):
+                    joined = "".join(v) if isinstance(v, list) else v
+                    replaced = _redact_paths(joined)
+                    if replaced != joined:
+                        data[k] = (
+                            replaced.splitlines(keepends=True)
+                            if isinstance(v, list)
+                            else replaced
+                        )
+                        changes += 1
+                # application/json (e variantes) — dict aninhado
+                elif "json" in k and isinstance(v, (dict, list)):
+                    scrubbed = _scrub_json_paths(v)
+                    if scrubbed != v:
+                        data[k] = scrubbed
+                        changes += 1
     return changes
 
 
@@ -898,7 +979,12 @@ def clean_warning_outputs(nb: dict, _p: Path) -> int:
                     text = "".join(text)
                 if any(kw in text for kw in WARNING_KEYWORDS):
                     # remove o output todo se for so warning
-                    # mas se tem outras linhas (ex logs INFO + warning), preserva
+                    # mas se tem outras linhas (ex logs INFO + warning), preserva.
+                    # Filtros: linhas que CONTEM keyword de Warning, mais traceback-style
+                    # padrao do warnings module (linha "warnings.warn(...)" e
+                    # follow-up do tight_layout do matplotlib).
+                    # NAO usamos heuristica generica de "linha indentada com =" porque
+                    # pegaria prints didaticos (ver review do PR #11).
                     lines = text.split("\n")
                     kept_lines = [
                         l for l in lines
@@ -907,7 +993,6 @@ def clean_warning_outputs(nb: dict, _p: Path) -> int:
                             l.strip().startswith("warnings.warn")
                             or l.strip().startswith("self._figure.tight_layout")
                             or l.strip().startswith("plt.tight_layout")
-                            or re.match(r"^\s+\w+\s*=", l)
                         )
                     ]
                     new_text = "\n".join(kept_lines).strip()
@@ -977,6 +1062,7 @@ PIPELINE = [
     ("broken_refs", broken_refs),
     ("wrong_topic_refs", wrong_topic_refs),
     ("obsolete_refs", obsolete_refs),
+    ("fix_invalid_backtick_slugs", fix_invalid_backtick_slugs),
     ("fix_wrong_semantic_refs", fix_wrong_semantic_refs),
     ("cut_words", cut_words),
     ("glued_headers", glued_headers),
@@ -999,24 +1085,35 @@ def main():
     paths = all_paths()
     totals = {name: 0 for name, _ in PIPELINE}
     affected_files = 0
+    failures: list[tuple[Path, str]] = []
     for p in paths:
         if only and only != p.name:
             continue
-        nb = load(p)
-        before = json.dumps(nb, ensure_ascii=False)
-        for name, fn in PIPELINE:
-            c = fn(nb, p)
-            totals[name] += c
-        after = json.dumps(nb, ensure_ascii=False)
-        if before != after:
-            save(p, nb)
-            affected_files += 1
-            print(f"  fixed: {p.relative_to(ROOT)}")
+        try:
+            nb = load(p)
+            before = json.dumps(nb, ensure_ascii=False)
+            for name, fn in PIPELINE:
+                c = fn(nb, p)
+                totals[name] += c
+            after = json.dumps(nb, ensure_ascii=False)
+            if before != after:
+                save(p, nb)
+                affected_files += 1
+                print(f"  fixed: {p.relative_to(ROOT)}")
+        except (json.JSONDecodeError, OSError) as e:
+            failures.append((p, f"{type(e).__name__}: {e}"))
+            print(f"  FAILED: {p.relative_to(ROOT)} -- {type(e).__name__}: {e}",
+                  file=sys.stderr)
     print()
     print(f"arquivos modificados: {affected_files}/{len(paths)}")
     for name, total in totals.items():
         if total:
             print(f"  {name:25} {total}")
+    if failures:
+        print(f"\n{len(failures)} arquivo(s) falharam:", file=sys.stderr)
+        for fp, err in failures:
+            print(f"  - {fp.relative_to(ROOT)}: {err}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

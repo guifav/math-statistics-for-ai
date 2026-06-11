@@ -116,6 +116,13 @@ BULLET_GLUED_RE = re.compile(
     r"(?<![\s\-])(?<=[A-Za-z\?\.!\)])- (?:\[|[A-Za-z*])"
 )
 
+# Rules 12-13: fingerprints of the newline-stripping corruption in CODE
+# cells. A collapsed code cell becomes ONE giant `#` comment line — it
+# parses cleanly, executes as a no-op and silently produces no output, so
+# neither ast.parse nor the markdown fence rules above catch it.
+GLUED_STMT_PRINT_RE = re.compile(r"[\)\}\]]print\(")
+GLUED_COMMENT_AFTER_WORD_RE = re.compile(r"[a-z]{3,}#\s*[A-Z]")
+
 
 def _first_line_has_glued_lang(first_line: str) -> bool:
     """Detect `lang` glued to identifier on a fence opener.
@@ -159,6 +166,67 @@ def _is_comment_only_code(text: str) -> bool:
         return True
     joined = "\n".join(lines)
     return bool(CODE_KEYWORDS_IN_COMMENT_RE.search(joined))
+
+
+def _is_collapsed_code(text: str) -> bool:
+    """Heuristic for rule 12: code cell collapsed into a single comment line.
+
+    Requires exactly one non-empty line, starting with '#', suspiciously long
+    (>100 chars) and still carrying code/comment markers inside (`print(`,
+    an assignment, or a second `#`). Legit one-line section markers are short
+    and carry none of those.
+    """
+    lines = _non_empty_lines(text)
+    if len(lines) != 1:
+        return False
+    line = lines[0]
+    if not line.lstrip().startswith("#") or len(line) <= 100:
+        return False
+    return "print(" in line or " = " in line or line.count("#") >= 2
+
+
+def _check_execution_hygiene(path: Path, cells: list) -> list[str]:
+    """Rule 14: committed outputs must come from one clean top-to-bottom run.
+
+    The repo contract (tools/run_notebooks.py) executes every code cell in
+    order; exercise-only scaffolds consume an execution slot but have their
+    outputs/execution_count erased afterwards. So, walking code cells in
+    order, each non-scaffold cell must carry exactly the next counter value.
+    Empty code cells are skipped by the executor and consume nothing.
+    """
+    errors: list[str] = []
+    expected = 1
+    for idx, cell in enumerate(cells, 1):
+        if cell.get("cell_type") != "code":
+            continue
+        if not source_text(cell).strip():
+            continue
+        tags = (cell.get("metadata") or {}).get("tags") or []
+        scaffold = "exercise" in tags and "solution" not in tags
+        ec = cell.get("execution_count")
+        if scaffold:
+            if ec is not None:
+                errors.append(
+                    f"{path}: cell {idx}: exercise scaffold must not carry execution_count"
+                )
+            expected += 1
+            continue
+        if ec is None:
+            errors.append(
+                f"{path}: cell {idx}: code cell without execution_count "
+                f"(not part of the committed top-to-bottom run)"
+            )
+            expected += 1
+            continue
+        if ec != expected:
+            errors.append(
+                f"{path}: cell {idx}: execution_count {ec} != expected {expected} "
+                f"(committed run is not a clean top-to-bottom execution)"
+            )
+            expected = ec + 1
+            continue
+        expected += 1
+    return errors
 
 
 def _is_stub_solution(cell: dict, text: str) -> bool:
@@ -478,6 +546,29 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
                 f"(possible broken code)"
             )
 
+        # Rule 12: code cell collapsed into a single giant comment line
+        # (newline-stripping corruption; executes as a silent no-op).
+        if _is_collapsed_code(text):
+            errors.append(
+                f"{path}: cell {cell_index}: code cell collapsed into a single "
+                f"comment line (newline-stripping corruption)"
+            )
+
+        # Rule 13: glued statement boundaries inside code lines.
+        for code_line in text.splitlines():
+            if GLUED_STMT_PRINT_RE.search(code_line):
+                errors.append(
+                    f"{path}: cell {cell_index}: code line has `)print(` glued "
+                    f"statement boundary (`{code_line.strip()[:60]}`)"
+                )
+                break
+            if GLUED_COMMENT_AFTER_WORD_RE.search(code_line):
+                errors.append(
+                    f"{path}: cell {cell_index}: code line has comment glued "
+                    f"after word (`{code_line.strip()[:60]}`)"
+                )
+                break
+
         # Rule 3: solution cell that is a stub.
         if _is_stub_solution(cell, text):
             errors.append(
@@ -496,6 +587,9 @@ def validate_notebook(path: Path, notebook_names: set[str]) -> list[str]:
 
     # Rule 5: exercise-solution completeness.
     errors.extend(_check_exercise_solution_completeness(path, cells))
+
+    # Rule 14: committed execution_counts form one clean top-to-bottom run.
+    errors.extend(_check_execution_hygiene(path, cells))
 
     return errors
 

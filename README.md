@@ -97,7 +97,7 @@ python3 tools/validate_notebooks.py
 
 | Notebook | Celulas | Descricao |
 |---|---:|---|
-| [`4_1_fundamentos_redes_neurais.ipynb`](notebooks/04-deep-learning/4_1_fundamentos_redes_neurais.ipynb) | 40 | Neuronios, ativacoes, perceptron, MLP, backpropagation e treinamento basico. |
+| [`4_1_fundamentos_redes_neurais.ipynb`](notebooks/04-deep-learning/4_1_fundamentos_redes_neurais.ipynb) | 39 | Neuronios, ativacoes, perceptron, MLP, backpropagation e treinamento basico. |
 | [`4_2_arquiteturas_deep.ipynb`](notebooks/04-deep-learning/4_2_arquiteturas_deep.ipynb) | 41 | CNNs, RNNs, Transformers, profundidade, conectividade e hierarquia de features. |
 | [`4_3_treinamento_deep.ipynb`](notebooks/04-deep-learning/4_3_treinamento_deep.ipynb) | 39 | Inicializacao, otimizadores, regularizacao, normalizacao, schedules e diagnostico. |
 | [`4_4_transfer_learning.ipynb`](notebooks/04-deep-learning/4_4_transfer_learning.ipynb) | 35 | Feature extraction, fine-tuning, congelamento de camadas e adaptacao de modelos. |
@@ -134,7 +134,7 @@ python3 tools/validate_notebooks.py
 | [`5C_1_gans.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_1_gans.ipynb) | 26 | Gerador, discriminador, treinamento adversarial, instabilidade e aplicacoes generativas. |
 | [`5C_2_vaes.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_2_vaes.ipynb) | 52 | Encoder, decoder, espaco latente, ELBO, KL divergence, beta-VAE e interpolacao. |
 | [`5C_3_diffusion_models.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_3_diffusion_models.ipynb) | 94 | Forward process, denoising, scheduler, sampling e fundamentos de diffusion models. |
-| [`5C_4_finetuning_generativo.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_4_finetuning_generativo.ipynb) | 30 | Transfer learning, LoRA, adapters, datasets, avaliacao e riscos de overfitting. |
+| [`5C_4_finetuning_generativo.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_4_finetuning_generativo.ipynb) | 29 | Transfer learning, LoRA, adapters, datasets, avaliacao e riscos de overfitting. |
 | [`5C_5_multimodal_ai.ipynb`](notebooks/05-dominios-aplicados/05C-generative-ai/5C_5_multimodal_ai.ipynb) | 81 | Representacoes multimodais, texto-imagem, audio, video, alinhamento e avaliacao. |
 
 #### 05D - Series Temporais

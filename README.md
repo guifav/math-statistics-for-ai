@@ -2,6 +2,8 @@
 
 Curriculo educacional em portugues para estudar matematica, estatistica, machine learning, deep learning, dominios aplicados e MLOps com notebooks Jupyter executaveis.
 
+**Artigo:** [Por onde se aprofundar em IA: matemática, estatística e ML](https://guifav.dev/blog/por-onde-se-aprofundar-em-ia/)
+
 ## Estado Atual
 
 - **Notebooks:** 54
